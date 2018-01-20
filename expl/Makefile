@@ -44,5 +44,5 @@ labeltranslator.c: labellexer.l
 	$(LEX) -o labeltranslator.c labellexer.l
 
 clean:
-	rm *.o lex.yy.c y.tab.c y.tab.h labeltranslator.c
+	rm *.o lex.yy.c y.tab.c y.tab.h labeltranslator.c expl$(VER) linker
 
