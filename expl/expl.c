@@ -1,14 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include "types.h"
 #include "y.tab.h"
 #include "node.h"
 
 /** print instruction **/
 #define printi(...)\
-	fprintf(target_file, __VA_ARGS__)
+	fprintf(ob_file, __VA_ARGS__)
 
 /** MOV Rx,N **/
 #define MOV_RN(x,N)\
@@ -94,10 +93,6 @@
 #define POP(x)\
 	printi("POP R%d\n",x)
 
-/** INT N **/
-#define INT(N)\
-	printi("INT %d\n",N);
-
 /** CALL N **/
 #define CALL(N)\
 	printi("CALL %d\n",N)
@@ -105,7 +100,7 @@
 /** RET **/
 #define RET printi("RET\n")
 
-/** L_Xy: **/
+/** L_X[y]: **/
 #define LABEL_DEC(X,y)\
 	printi("L_%s%d:\n",X,y)
 
@@ -124,21 +119,35 @@
 #define WHILE_DOM curr_while
 
 /** Set IF label domain and put declaration **/
-#define GETIN_IF IF_DOM = ++if_ctr; LABEL_DEC("IF",IF_DOM)
+#define IF_INIT IF_DOM = ++if_ctr; LABEL_DEC("IF",IF_DOM)
 /** IF label exit **/
-#define GETOUT_IF LABEL_DEC("ENDIF",IF_DOM)
+#define IF_EXIT LABEL_DEC("ENDIF",IF_DOM)
+/** JZ ELSE, JZ ENDIF, JMP ENDIF **/
+#define JZ_ELSE(reg)\
+	LABEL_JZ("ELSE",IF_DOM,reg)
+#define JZ_ENDIF(reg)\
+	LABEL_JZ("ENDIF",IF_DOM,reg)
+#define JMP_ENDIF\
+	LABEL_JMP("ENDIF",IF_DOM)
 
 /** Set WHILE label domain and put declaration **/
-#define GETIN_WHILE\
+#define WHILE_INIT\
 	++in_while; WHILE_DOM = ++while_ctr;\
 	LABEL_DEC("WHILE",WHILE_DOM)
 /** WHILE label exit **/
-#define GETOUT_WHILE\
+#define WHILE_EXIT\
 	LABEL_DEC("ENDWHILE",WHILE_DOM);\
 	--in_while; --WHILE_DOM
+/** JZ ENDWHILE, JMP WHILE, JMP ENDWHILE **/
+#define JZ_ENDWHILE(reg)\
+	LABEL_JZ("ENDWHILE",WHILE_DOM,reg)
+#define JMP_ENDWHILE\
+	LABEL_JMP("ENDWHILE",WHILE_DOM)
+#define JMP_WHILE\
+	LABEL_JMP("WHILE",WHILE_DOM)
 
 /** Test if in loop **/
-#define IN_LOOP if(in_while)
+#define islooping if(in_while)
 
 /** test if identifier is being assigned **/
 #define PAR root->par
@@ -150,12 +159,13 @@ ctr if_ctr;
 ctr while_ctr;
 ctr curr_while;
 ctr curr_if;
-ctr in_while=0;
-FILE *target_file;
+ctr in_while;
+FILE *ob_file;
 
 static void reset_counters(){
 	if_ctr=0;
 	while_ctr=0;
+	in_while=0;
 }
 
 static void free_all_reg(){
@@ -177,7 +187,7 @@ static void use_reg(node *n, reg_ind r){
 }
 
 void put_header(){
-	fprintf(target_file,"%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
+	printi("%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
 		0,2056,0,0,0,0,0,0);
 	printi("MOV SP,5021\n");
 	printi("MOV BP,4096\n");
@@ -216,7 +226,14 @@ static void put_read(node *n){
 }
 
 void terminate(){
-	INT(10);
+	reg_ind temp = r++;
+	MOV_RS(temp,"Exit");
+	PUSH(temp);
+	MOV_RN(temp,0);
+	int i;
+	for(i=0; i<4; i++)
+		PUSH(temp);
+	CALL(0);
 }
 
 void codegen(node *root){
@@ -311,45 +328,45 @@ void codegen(node *root){
 			break;
 
 		case N_IF:
-			GETIN_IF;
+			IF_INIT;
 			codegen(root->left);
 			cond = root->left->res_reg;
 			temp = root->right;
 			if(temp->right){
-				LABEL_JZ("ELSE",IF_DOM,cond); 
+				JZ_ELSE(cond); 
 				codegen(temp->left);
-				LABEL_JMP("ENDIF",IF_DOM);
+				JMP_ENDIF;
 				LABEL_DEC("ELSE",IF_DOM);
 				codegen(temp->right);
 			}
 			else{
-				LABEL_JZ("ENDIF",IF_DOM,cond);
+				JZ_ENDIF(cond);
 				codegen(temp->left);
 			}
-			GETOUT_IF;
+			IF_EXIT;
 			free_reg(root->left);
 			break;
 
 		case N_WHILE:
-			GETIN_WHILE;
+			WHILE_INIT;
 			codegen(root->left);
 			cond = root->left->res_reg;
 			temp = root->right;
-			LABEL_JZ("ENDWHILE",WHILE_DOM,cond);
+			JZ_ENDWHILE(cond);
 			codegen(temp);
-			LABEL_JMP("WHILE",WHILE_DOM);
-			GETOUT_WHILE;
+			JMP_WHILE;
+			WHILE_EXIT;
 			free_reg(root->left);
 			break;
 			
 		case N_BRK:
-			IN_LOOP{
-				LABEL_JMP("ENDWHILE",WHILE_DOM);
+			islooping{
+				JMP_ENDWHILE;
 			}
 			break;
 		case N_CNT:
-			IN_LOOP{
-				LABEL_JMP("WHILE",WHILE_DOM);
+			islooping{
+				JMP_WHILE;
 			}
 			break;
 	}
@@ -365,13 +382,13 @@ int main(int argc, char *argv[]){
 
 	in_file = fopen(argv[1],"r");
 	obfilename = obfile(argv[1]);
-	target_file = fopen(obfilename,"w");
+	ob_file = fopen(obfilename,"w");
 	yyset_in(in_file);
 	free_all_reg();
 	reset_counters();
 	yyparse();
 	fclose(in_file);
-	fclose(target_file);
+	fclose(ob_file);
 	
 	return 0;
 }

@@ -44,7 +44,7 @@ node* make_tree(node *root, node *left, node *right){
 
 node* add_stmt_tree(node *main, node *_new){
 	node *temp;
-	temp = CONnode();
+	temp = CON_NODE();
 	temp = make_tree(temp,main,_new);
 	return temp;
 }

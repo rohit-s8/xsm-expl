@@ -25,29 +25,49 @@ value* make_value(int num, const char *str);
 node* make_tree(node *root, node *left, node *right);
 node* add_stmt_tree(node *main, node* _new);
 
-#define VALnode(valtype,val)\
-	make_node(N_VAL,NULL,NON,valtype,val)
-#define IDnode(varname,valtype)\
-	make_node(N_ID,varname,NON,valtype,NULL)
-#define OPnode(optype)\
+/** Value node (number or string constant) **/
+#define VAL_NODE(datatype,val)\
+	make_node(N_VAL,NULL,NON,datatype,val)
+
+/** Identifier node **/
+#define ID_NODE(varname,datatype)\
+	make_node(N_ID,varname,NON,datatype,NULL)
+
+/** Operator node **/
+#define OP_NODE(optype)\
 	make_node(N_OP,NULL,optype,NON,NULL)
+
 #define makenode(nodetype)\
 	make_node(nodetype,NULL,NON,NON,NULL)
-#define CONnode()\
+/** Connector node **/
+#define CON_NODE()\
 	makenode(N_CON)
-#define RDnode()\
+
+/** Read instruction node **/
+#define RD_NODE()\
 	makenode(N_RD)
-#define WRnode()\
+
+/** Write instruction node **/
+#define WR_NODE()\
 	makenode(N_WR)
-#define IFnode()\
+
+/** if construct node **/
+#define IF_NODE()\
 	makenode(N_IF)
-#define WHILEnode()\
+
+/** while construct node **/
+#define WHILE_NODE()\
 	makenode(N_WHILE)
-#define BRKnode()\
+
+/** break statement node **/
+#define BRK_NODE()\
 	makenode(N_BRK)
-#define CNTnode()\
+
+/** continue statement node **/
+#define CNT_NODE()\
 	makenode(N_CNT)
 
+/** make integer or string values **/
 #define VAL_NUM(N)\
 	make_value(N,NULL)
 #define VAL_STR(S)\

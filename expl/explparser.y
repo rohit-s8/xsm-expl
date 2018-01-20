@@ -6,7 +6,6 @@
 #define YYSTYPE	node* 
 
 int yylex();
-int eprint(ctr, const char*);
 int yyerror(const char*);
 void codegen(node*);
 void put_header();
@@ -19,18 +18,18 @@ extern ctr line_ctr;
 %}
 
 
-%token NUM AROP1 AROP2 ID BEG END ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR
+%token NUM AROP1 AROP2 ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR
 %right ASSIGN
 %left RELOP
 %left AROP1
 %left AROP2
 
 %%
-program: BEG stmlist END
+program: stmlist
 	{
 	if(!errors){
 		put_header();
-		codegen($2);
+		codegen($1);
 		terminate();
 	}
 	else{
@@ -57,7 +56,7 @@ stmt: READ'('ID')'';'		{$$ = make_tree($1,$3,NULL);}
 assign: ID ASSIGN expr';'
       {
 	if($1->datatype != $3->datatype){
-		eprint(line_ctr,"Type mismatch");
+		yyerror("Type mismatch");
 		printf("%s is of %s datatype\n",$1->varname,
 			printtype($1->datatype));
 	}
@@ -67,26 +66,26 @@ assign: ID ASSIGN expr';'
 ifstmt: IF'('expr')'THEN stmlist ELSE stmlist ENDIF';'
       {
 	if($3->datatype == STRING)
-		eprint(line_ctr,"invalid expression in ()");
+		yyerror("invalid expression in ()\n");
 
-	temp=CONnode(); _if=make_tree(temp,$6,$8);
+	temp=CON_NODE(); _if=make_tree(temp,$6,$8);
 	$$=make_tree($1,$3,_if);
       }
 
       | IF'('expr')' THEN stmlist ENDIF';'
       {
 	if($3->datatype == STRING)
-		eprint(line_ctr,"invalid expression in ()");
+		yyerror("invalid expression in ()\n");
 
-	temp=CONnode(); _if=make_tree(temp,$6,NULL);
+	temp=CON_NODE(); _if=make_tree(temp,$6,NULL);
 	$$=make_tree($1,$3,_if);
       }
 ;
 
 whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
 	 {
-		if($3->datatype == STRING)
-			eprint(line_ctr,"invalid expression in ()");
+		if($3->datatype != BOOL)
+			yyerror("invalid expression in ()\n");
 
 		$$=make_tree($1,$3,$6);
 	 }
@@ -95,7 +94,7 @@ whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
 expr: expr AROP1 expr	
     {
 	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
@@ -106,7 +105,7 @@ expr: expr AROP1 expr
     | expr AROP2 expr
     {
 	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
@@ -117,7 +116,7 @@ expr: expr AROP1 expr
 | expr RELOP expr
     {
 	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
@@ -132,15 +131,8 @@ expr: expr AROP1 expr
 ;
 %%
 
-
-int eprint(ctr line, const char* s){
-	++errors;
-	fprintf(stderr,"error:%d:%s\n",line,s);
-	return 1;
-}
-
 int yyerror(const char* s){
 	++errors;
-	printf("error: %s\n",s);
+	printf("error:%d:%s",line_ctr,s);
 	return 1;
 }
