@@ -1,1 +1,1 @@
-compiler for eXpl labguage on XSM Machine
+compiler for eXpl language on XSM Machine
