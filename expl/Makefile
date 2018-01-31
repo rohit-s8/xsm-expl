@@ -8,10 +8,10 @@ all: expl$(VER) linker
 
 
 expl$(VER): expl.o node.o lexer.o parser.o files.o
-	$(CC) -o expl$(VER) expl.o node.o lexer.o parser.o files.o
+	$(CC) -g -o expl$(VER) expl.o node.o lexer.o parser.o files.o
 
 linker: labeltranslator.o pair.o files.o
-	$(CC) -o linker labeltranslator.o pair.o files.o
+	$(CC) -g -o linker labeltranslator.o pair.o files.o
 
 expl.o: expl.c node.h types.h y.tab.h
 	$(CC) $(CFLAG) expl.c

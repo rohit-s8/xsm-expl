@@ -6,27 +6,28 @@
 #define YYSTYPE	node* 
 
 int yylex();
-int eprint(ctr, const char*);
 int yyerror(const char*);
 void codegen(node*);
 void put_header();
 void terminate();
+int bindID(node*);
 YYSTYPE temp;
 YYSTYPE _if;
 YYSTYPE _while;
 ctr errors=0;
 extern ctr line_ctr;
+type t;
 %}
 
 
-%token NUM AROP1 AROP2 ID BEG END ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR
+%token NUM AROP1 AROP2 ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC
 %right ASSIGN
 %left RELOP
 %left AROP1
 %left AROP2
 
 %%
-program: BEG stmlist END
+program: Declarations stmlist
 	{
 	if(!errors){
 		put_header();
@@ -41,11 +42,51 @@ program: BEG stmlist END
 	}
        ;
 
+Declarations: DECL Declist ENDDEC';'
+	    ;
+
+Declist: Declist Declaration
+       | Declaration
+;
+
+Declaration: Type varlist';'
+	   ;
+
+Type: INT	{t = T_INTEGER;}
+    | STRING	{t = T_STRING;}
+    ;
+
+varlist: varlist','variable
+       | variable
+       ;
+
+variable: ID		{installID(single_entry($1,t));}
+	| Array		{installID(array_entry($1,t));}
+;
+
+Array: ID Dimensions
+     {
+	temp = makenode(N_ARR);
+	$$ = make_tree(temp,$1,$2);
+	}
+	
+     ;
+
+Dimensions: Dimensions '['expr']'
+	  {
+		temp = CON_NODE();
+		$$ = make_tree(temp,$1,$3);
+	  }
+	  | '['expr']'		{$$ = $2;}
+;
+
+
 stmlist: stmlist stmt 	{$$ = add_stmt_tree($1,$2);}
        | stmt		{$$ = $1;}
 	;
 
-stmt: READ'('ID')'';'		{$$ = make_tree($1,$3,NULL);}
+stmt: READ'('ID')'';'		{bindID($3); $$ = make_tree($1,$3,NULL);}
+    | READ'('Array')'';'	{bindArray($3); $$=make_tree($1,$3,NULL);}
     | WRITE'('expr')'';'	{$$ = make_tree($1,$3,NULL);}
 |assign		{$$=$1;}
 |ifstmt		{$$=$1;}
@@ -56,37 +97,49 @@ stmt: READ'('ID')'';'		{$$ = make_tree($1,$3,NULL);}
 
 assign: ID ASSIGN expr';'
       {
+	bindID($1);
 	if($1->datatype != $3->datatype){
-		eprint(line_ctr,"Type mismatch");
+		yyerror("Type mismatch.");
 		printf("%s is of %s datatype\n",$1->varname,
 			printtype($1->datatype));
 	}
 	$$ = make_tree($2,$1,$3);}
+
+|	Array ASSIGN expr';'
+	{
+		bindArray($1);
+		if($1->datatype != $3->datatype){
+			yyerror("Type mismatch.");
+			printf("%s is of %s datatype\n",
+				$1->left->varname,printtype($1->datatype));
+		}
+		$$ = make_tree($2,$1,$3);
+	}
       ;
 
 ifstmt: IF'('expr')'THEN stmlist ELSE stmlist ENDIF';'
       {
-	if($3->datatype == STRING)
-		eprint(line_ctr,"invalid expression in ()");
+	if($3->datatype == T_STRING)
+		yyerror("invalid expression in ()\n");
 
-	temp=CONnode(); _if=make_tree(temp,$6,$8);
+	temp=CON_NODE(); _if=make_tree(temp,$6,$8);
 	$$=make_tree($1,$3,_if);
       }
 
       | IF'('expr')' THEN stmlist ENDIF';'
       {
-	if($3->datatype == STRING)
-		eprint(line_ctr,"invalid expression in ()");
+	if($3->datatype == T_STRING)
+		yyerror("invalid expression in ()\n");
 
-	temp=CONnode(); _if=make_tree(temp,$6,NULL);
+	temp=CON_NODE(); _if=make_tree(temp,$6,NULL);
 	$$=make_tree($1,$3,_if);
       }
 ;
 
 whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
 	 {
-		if($3->datatype == STRING)
-			eprint(line_ctr,"invalid expression in ()");
+		if($3->datatype != T_BOOL)
+			yyerror("invalid expression in ()\n");
 
 		$$=make_tree($1,$3,$6);
 	 }
@@ -94,53 +147,86 @@ whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
 
 expr: expr AROP1 expr	
     {
-	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
 	$$ = make_tree($2,$1,$3);
-	$$->datatype = INTEGER;
+	$$->datatype = T_INTEGER;
     }
 
     | expr AROP2 expr
     {
-	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
 	$$ = make_tree($2,$1,$3);
-	$$->datatype = INTEGER;
+	$$->datatype = T_INTEGER;
     }
 
 | expr RELOP expr
     {
-	if($1->datatype!=INTEGER || $3->datatype!=INTEGER){
-	eprint(line_ctr,"Type mismatch.");
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
 		printop($2->optype));
 	}
 	$$ = make_tree($2,$1,$3);
-	$$->datatype = BOOL;
+	$$->datatype = T_BOOL;
     }
 
 | '('expr')'	{$$=$2;}
-| ID	{$$=$1;}
+| ID	{bindID($1); $$=$1;}
+| Array	{bindArray($1); $$=$1;}
 | NUM	{$$=$1;}
 | STR	{$$=$1;}
 ;
 %%
 
+int bindID(node *idnode){
+	idnode->ptr = lookup(idnode->varname);
+	if(!idnode->ptr){
+		yyerror("variable ");
+		printf("%s not declared\n",idnode->varname);
+		return 0;
+	}
+	idnode->datatype = idnode->ptr->datatype;
+	return 1;
+}
 
-int eprint(ctr line, const char* s){
-	++errors;
-	fprintf(stderr,"error:%d:%s\n",line,s);
+int bindArray(node *array){
+	node *idnode = array->left;
+	node *dimtree = array->right;
+
+	idnode->ptr = lookup(idnode->varname);
+	if(!idnode->ptr){
+		yyerror("variable ");
+		printf("%s not declared\n",idnode->varname);
+		return 0;
+	}
+	if(!idnode->ptr->dim1){
+		yyerror("variable ");
+		printf("%s not declared as array\n",idnode->varname);
+		return 0;
+	}
+	if(dimtree->datatype != T_INTEGER){
+		node *r = dimtree->left;
+		node *c = dimtree->right;
+		if(r->datatype != T_INTEGER || c->datatype != T_INTEGER){
+			yyerror("array indices must be integers\n");
+			return 0;
+		}
+	}
+
+	array->datatype = idnode->datatype = idnode->ptr->datatype;
 	return 1;
 }
 
 int yyerror(const char* s){
 	++errors;
-	printf("error: %s\n",s);
+	printf("error:%d:%s",line_ctr,s);
 	return 1;
 }

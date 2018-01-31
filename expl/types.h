@@ -1,7 +1,7 @@
 #ifndef TYPES_H_
 #define TYPES_H_
 
-typedef int	reg_ind;
+typedef unsigned int	reg_ind;
 typedef unsigned int	ctr;
 
 //non type
@@ -18,7 +18,8 @@ typedef enum Node{
 	N_IF,
 	N_WHILE,
 	N_BRK,
-	N_CNT
+	N_CNT,
+	N_ARR
 }Node;
 
 //operator types
@@ -38,9 +39,9 @@ typedef enum Operator{
 
 //supported data types
 typedef enum type{
-	INTEGER=0,
-	STRING, 
-	BOOL
+	T_INTEGER=0,
+	T_STRING, 
+	T_BOOL
 }type;	
 
 char* printop(Operator op);
