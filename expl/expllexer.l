@@ -16,21 +16,25 @@ id	[a-z]
 
 {number}	{
 		int num=atoi(yytext);
-		yylval=VAL_NODE(INTEGER,VAL_NUM(num));
+		yylval=VAL_NODE(T_INTEGER,VAL_NUM(num));
 		return NUM;
 		}
 
 {string}	{
 		char *temp = strndup(yytext+1,yyleng-2);
-		yylval=VAL_NODE(STRING,VAL_STR(temp));
+		yylval=VAL_NODE(T_STRING,VAL_STR(temp));
 		return STR;
 		}
 
 {id}		{
 		char *temp = strndup(yytext,yyleng);
-		yylval=ID_NODE(temp,INTEGER);
+		yylval=ID_NODE(temp);
 		return ID;
 		}
+
+"decl"		{return DECL;}
+
+"enddec"	{return ENDDEC;}
 
 "read"		{yylval=RD_NODE(); return READ;}
 
@@ -53,6 +57,10 @@ id	[a-z]
 "break"		{yylval=BRK_NODE(); return BREAK;}
 
 "continue"	{yylval=CNT_NODE(); return CONTINUE;}
+
+"int"		{return INT;}
+
+"string"	{return STRING;}
 
 [<]		{yylval=OP_NODE(O_LT); return RELOP;}
 
@@ -80,8 +88,12 @@ id	[a-z]
 
 [\n]		{++line_ctr;}
 
-[();]		{return *yytext;}
+[();,]		{return *yytext;}
 
-.		{yyerror("unknown character\n");exit(1);}
+"["		{return *yytext;}
+
+"]"		{return *yytext;}
+
+.		{yyerror("unknown character\n");printf("%c\n",*yytext);exit(1);}
 
 %%

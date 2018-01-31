@@ -29,9 +29,13 @@
 #define MOV_AR(x,y)\
 	printi("MOV [%d],R%d\n",x,y)
 
-/** MOV [x],[y] **/
-#define MOV_AA(x,y)\
-	printi("MOV [%d],[%d]\n",x,y)
+/** MOV [Rx],Ry **/
+#define MOVA_AR(x,y)\
+	printi("MOV [R%d],R%d\n",x,y)
+
+/** MOV Rx,[Ry] **/
+#define MOVA_RA(x,y)\
+	printi("MOV R%d,[R%d]\n",x,y)
 
 /** ADD Rx,Ry **/
 #define ADD(x,y)\
@@ -49,9 +53,9 @@
 #define DIV(x,y)\
 	printi("DIV R%d,R%d\n",x,y)
 
-/** MOV [ID_ADDRESS=x],Ry **/
+/** MOV [ADDRESS=x],Ry **/
 #define ASN(x,y)\
-	MOV_AR(x,y)
+	MOVA_AR(x,y)
 
 /** LT Rx,Ry **/
 #define LT(x,y)\
@@ -151,8 +155,10 @@
 
 /** test if identifier is being assigned **/
 #define PAR root->par
-#define ID_ASSIGN\
+#define IS_ASSIGNED\
        	PAR->nodetype==N_OP && PAR->optype==O_ASN && PAR->left==root
+#define IS_ARRAY\
+	PAR->nodetype==N_ARR && PAR->left==root
 
 reg_ind r;
 ctr if_ctr;
@@ -189,7 +195,7 @@ static void use_reg(node *n, reg_ind r){
 void put_header(){
 	printi("%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
 		0,2056,0,0,0,0,0,0);
-	printi("MOV SP,5021\n");
+	printi("MOV SP,%d\n",get_next_addr()-1);
 	printi("MOV BP,4096\n");
 }
 
@@ -236,11 +242,39 @@ void terminate(){
 	CALL(0);
 }
 
+static reg_ind get_array_addr(node *array){
+	reg_ind base,offset,next;
+	node *idnode,*dimtree;
+
+	idnode = array->left;
+	dimtree = array->right;
+	base = idnode->res_reg;		//base address
+	if(dimtree->datatype==T_INTEGER)
+		offset = dimtree->res_reg;
+	else{
+		offset = dimtree->left->res_reg;
+		next = get_reg(dimtree);
+		MOV_RN(next,idnode->ptr->dim2);
+		MUL(offset,next);
+		ADD(offset,dimtree->right->res_reg);
+		free_reg(dimtree);
+		use_reg(dimtree,offset);
+		free_reg(dimtree->right);
+		use_reg(dimtree->left,-1);
+	}
+
+	ADD(base,offset);
+	use_reg(array,base);
+	use_reg(idnode,-1);
+	free_reg(dimtree);
+	return base;
+}
+
 void codegen(node *root){
 	reg_ind next,left_reg,right_reg;
 	reg_ind cond;
 	node *temp;
-	int addr;
+	unsigned int addr;
 
 	if(root==NULL)
 		return;
@@ -252,20 +286,25 @@ void codegen(node *root){
 			break;
 		case N_VAL:
 			next = get_reg(root);
-			if(root->datatype == INTEGER)
+			if(root->datatype == T_INTEGER)
 				MOV_RN(next,root->val->num);
-			else if(root->datatype == STRING)
+			else if(root->datatype == T_STRING)
 				MOV_RS(next,root->val->str);
 			break;
 		case N_ID:
 			next = get_reg(root);
-			addr = *(root->varname)-'a'+4096;
-			if(!(root->par->nodetype==N_RD || ID_ASSIGN))
-				MOV_RA(next,addr);
-			else if(root->par->nodetype==N_RD)
-				MOV_RN(next,addr);
+			addr = get_id_addr(root);
+			if(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY)
+				MOV_RN(next,addr);	//address of id
 			else
-				free_reg(root);
+				MOV_RA(next,addr);	//value of id
+			break;
+		case N_ARR:
+			codegen(root->left);
+			codegen(root->right);
+			reg_ind addr_reg = get_array_addr(root);
+			if(!(PAR->nodetype==N_RD || IS_ASSIGNED))
+				MOVA_RA(addr_reg,addr_reg);
 			break;
 		case N_OP:
 			codegen(root->left);
@@ -286,9 +325,9 @@ void codegen(node *root){
 					DIV(left_reg,right_reg);
 					break;
 				case O_ASN:
-					addr=*(root->left->varname)-'a'+4096;
-					ASN(addr,right_reg);
+					ASN(left_reg,right_reg);
 					free_reg(root->right);
+					free_reg(root->left);
 					break;
 				case O_LT:
 					LT(left_reg,right_reg);
