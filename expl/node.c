@@ -333,12 +333,12 @@ int verify_func(type returntype, const char *funcname, node *params){
 			printf("function %s expects more parameters\n",funcname);
 			exit(1);
 		}
-		else if(p->datatype != q->datatype){
-			printf("mismatch in function parameters\n");
+		else if(p->datatype != q->datatype || p->isptr!=q->isptr){
+			yyerror("mismatch in function parameters\n");
 			exit(1);
 		}
 		else if(strcmp(p->varname,q->varname)!=0){
-			printf("mismatch in function parameters\n");
+			yyerror("mismatch in function parameters\n");
 			exit(1);
 		}
 	}
