@@ -12,6 +12,7 @@ typedef enum Node{
 	N_VAL=0,
 	N_OP, 
 	N_ID,
+	N_PTR,
 	N_RD, 
 	N_WR,
 	N_CON,
@@ -19,7 +20,15 @@ typedef enum Node{
 	N_WHILE,
 	N_BRK,
 	N_CNT,
-	N_ARR
+	N_BRKP,
+	N_ARR,
+	N_RET,
+	N_TYPE,
+	N_PARAM,
+	N_FNC,		//function call
+	N_FND,		//function definition
+	N_ARG,
+	N_DEC
 }Node;
 
 //operator types
@@ -34,7 +43,8 @@ typedef enum Operator{
 	O_GT,
 	O_GTE,
 	O_EQ,
-	O_NE
+	O_NE,
+	O_ADR
 }Operator;
 
 //supported data types

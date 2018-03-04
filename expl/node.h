@@ -8,20 +8,33 @@ typedef union value{
 	char *str;
 }value;
 
+typedef struct param{
+	type datatype;
+	char *varname;
+	int isptr;
+	struct param *next;
+}param;
+
 typedef struct symtable{
 	char *varname;
 	type datatype;
+	int isptr;
 	unsigned int size;
 	unsigned int dim1;
 	unsigned int dim2;
-	unsigned int bind_addr;
+	int bind_addr;
+	int isGlobal;
+	param *params;
+	struct symtable *ltable;
 	struct symtable *next;
 }symtable;
 
 typedef symtable* entry;
-extern symtable *table;
-#define for_each_entry(e)\
-	for(e=table;e!=NULL;e=e->next)
+extern symtable *gtable;
+#define for_each_entry(e,table)\
+	for(e=table->next;e!=NULL;e=e->next)
+#define for_each_param(p,plist)\
+	for(p=plist->next;p!=NULL;p=p->next)
 
 //node definition
 typedef struct node{
@@ -32,37 +45,62 @@ typedef struct node{
 	value *val;
 	reg_ind res_reg;
 	entry ptr;
+	int isptr;
 	struct node *left,*right,*par;
 }node;
 
 
 node* make_node(Node nodetype, char *varname, Operator optype,
-		type datatype, value *val);
+		type datatype, value *val, int isptr);
 value* make_value(int num, const char *str);
 node* make_tree(node *root, node *left, node *right);
 node* add_stmt_tree(node *main, node* _new);
-void installID(entry e);
-entry single_entry(node* idnode, type datatype);
-entry array_entry(node *array, type datatype);
-entry lookup(char* name);
-unsigned int get_next_addr();
-unsigned int get_id_addr(node *idnode);
-
+void param_args_list(node *root, param *head);
+entry id_entry(node *idnode, type t, int isptr);
+entry array_entry(node *arraynode, type t);
+entry func_entry(node *funcnode, type t);
+void installID(entry e, symtable *table);
+entry lookup(char* name, symtable *table);
+void make_lst(node *decl, const char* funcname);
+void make_gst(node *decl);
+int get_id_addr(node *idnode);
+int verify_func(type returntype, const char *funcname, node *params);
+int last_addr(symtable *table);
 
 /** Value node (number or string constant) **/
 #define VAL_NODE(datatype,val)\
-	make_node(N_VAL,NULL,NON,datatype,val)
+	make_node(N_VAL,NULL,NON,datatype,val,0)
 
 /** Identifier node **/
 #define ID_NODE(varname)\
-	make_node(N_ID,varname,NON,NON,NULL)
+	make_node(N_ID,varname,NON,NON,NULL,0)
+
+/** Pointer deferencing/declaration node **/
+#define PTR_NODE(varname)\
+	make_node(N_PTR,varname,NON,NON,NULL,0)
 
 /** Operator node **/
 #define OP_NODE(optype)\
-	make_node(N_OP,NULL,optype,NON,NULL)
+	make_node(N_OP,NULL,optype,NON,NULL,0)
+
+/** Type node **/
+#define TYPE_NODE(datatype)\
+	make_node(N_TYPE,NULL,NON,datatype,NULL,0)
+
+/** parameter node **/
+#define PARAM_NODE(datatype,paramname,isptr)\
+	make_node(N_PARAM,paramname,NON,datatype,NULL,isptr)
+
+/* function call node */
+#define FNC_NODE(funcname)\
+	make_node(N_FNC,funcname,NON,NON,NULL,0)
+
+/* function defintion node */
+#define FND_NODE(funcname)\
+	make_node(N_FND,funcname,NON,NON,NULL,0)
 
 #define makenode(nodetype)\
-	make_node(nodetype,NULL,NON,NON,NULL)
+	make_node(nodetype,NULL,NON,NON,NULL,0)
 /** Connector node **/
 #define CON_NODE()\
 	makenode(N_CON)
@@ -90,6 +128,26 @@ unsigned int get_id_addr(node *idnode);
 /** continue statement node **/
 #define CNT_NODE()\
 	makenode(N_CNT)
+
+/** declaration node **/
+#define DEC_NODE()\
+	makenode(N_DEC)
+
+/** array node **/
+#define ARR_NODE()\
+	makenode(N_ARR)
+
+/** return statement node **/
+#define RET_NODE()\
+	makenode(N_RET)
+
+/** argument node **/
+#define ARG_NODE()\
+	makenode(N_ARG)
+
+/** breakpoint node **/
+#define BRKP_NODE()\
+	makenode(N_BRKP)
 
 /** make integer or string values **/
 #define VAL_NUM(N)\

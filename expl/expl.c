@@ -9,6 +9,14 @@
 #define printi(...)\
 	fprintf(ob_file, __VA_ARGS__)
 
+/** MOV A,B **/
+#define MOV(A,B)\
+	printi("MOV %s,%s\n",A,B)
+
+/** MOV Rx,BP **/
+#define MOV_RBP(x)\
+	printi("MOV R%d,BP\n",x)
+
 /** MOV Rx,N **/
 #define MOV_RN(x,N)\
 	printi("MOV R%d,%d\n",x,N)
@@ -104,6 +112,9 @@
 /** RET **/
 #define RET printi("RET\n")
 
+/** BRKP **/
+#define BRKP printi("BRKP\n")
+
 /** L_X[y]: **/
 #define LABEL_DEC(X,y)\
 	printi("L_%s%d:\n",X,y)
@@ -159,6 +170,8 @@
        	PAR->nodetype==N_OP && PAR->optype==O_ASN && PAR->left==root
 #define IS_ARRAY\
 	PAR->nodetype==N_ARR && PAR->left==root
+#define IS_REF\
+	PAR->optype==O_ADR
 
 reg_ind r;
 ctr if_ctr;
@@ -167,6 +180,10 @@ ctr curr_while;
 ctr curr_if;
 ctr in_while;
 FILE *ob_file;
+ctr s1[100];		//number of registers in use stack
+ctr s2[100];		//number of registers saved stack
+ctr t1=-1;			//for s1
+ctr t2=-1;			//for s2
 
 static void reset_counters(){
 	if_ctr=0;
@@ -178,29 +195,77 @@ static void free_all_reg(){
 	r=0;
 }
 
-static reg_ind get_reg(node *n){
-	n->res_reg = r++;
-	return (r-1);
+static reg_ind get_reg(){
+	return r++;
 }
 
-static void free_reg(node *n){
-	n->res_reg=-1;
+static void free_reg(){
 	--r;
 }
 
-static void use_reg(node *n, reg_ind r){
-	n->res_reg = r;
+static ctr num_reg(){
+	return r;
+}
+
+static void save_regstate(){
+	++t1;
+	s1[t1] = r;
+}
+
+static void restore_regstate(){
+	r = s1[t1];
+	--t1;
+}
+
+static void save_registers(ctr num){
+	++t2;
+	s2[t2] = num;
+	int i;
+	for(i=0; i<num; i++){
+		PUSH(i);
+	}
+}
+
+static void restore_registers(){
+	int i;
+	for(i=s2[t2]-1; i>=0; i--){
+		POP(i);
+	}
+	--t2;
+}
+
+static reg_ind reglink(node *n){
+	n->res_reg = get_reg();
+	return n->res_reg;
+}
+
+static void reg_unlink(node *n){
+	n->res_reg=-1;
+	free_reg();
+}
+
+static void change_reglink(node *n, node *m){
+	n->res_reg = m->res_reg;
+	m->res_reg = -1;
 }
 
 void put_header(){
 	printi("%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
 		0,2056,0,0,0,0,0,0);
-	printi("MOV SP,%d\n",get_next_addr()-1);
-	printi("MOV BP,4096\n");
+	MOV("BP","4096");
+	printi("MOV SP,%d\n",last_addr(gtable));
+	reg_ind temp = get_reg();
+	PUSH(temp);
+	free_reg();
+	LABEL_CALL("main",0);
+	temp = get_reg();
+	POP(temp);
+	free_reg();
+	LABEL_JMP("EXIT",0);
 }
 
 static void put_write(node *n){
-	reg_ind temp = r++;
+	reg_ind temp = get_reg();
 	MOV_RS(temp,"Write");
 	PUSH(temp);
 	MOV_RN(temp,-2);
@@ -210,13 +275,14 @@ static void put_write(node *n){
 	PUSH(temp);
 	CALL(0);
 	int i;
-	for(i=0;i<5;i++)
+	for(i=0;i<5;i++){
        	POP(temp);
-	--r;
+	}
+	free_reg();
 }
 
 static void put_read(node *n){
-	reg_ind temp = r++;
+	reg_ind temp = get_reg();
 	MOV_RS(temp,"Read");
 	PUSH(temp);
 	MOV_RN(temp,-1);
@@ -226,19 +292,22 @@ static void put_read(node *n){
 	PUSH(temp);
 	CALL(0);
 	int i;
-	for(i=0;i<5;i++)
+	for(i=0;i<5;i++){
        	POP(temp);
-	--r;
+	}
+	free_reg();
 }
 
 void terminate(){
-	reg_ind temp = r++;
+	LABEL_DEC("EXIT",0);
+	reg_ind temp = get_reg();
 	MOV_RS(temp,"Exit");
 	PUSH(temp);
 	MOV_RN(temp,0);
 	int i;
-	for(i=0; i<4; i++)
+	for(i=0; i<4; i++){
 		PUSH(temp);
+	}
 	CALL(0);
 }
 
@@ -253,20 +322,18 @@ static reg_ind get_array_addr(node *array){
 		offset = dimtree->res_reg;
 	else{
 		offset = dimtree->left->res_reg;
-		next = get_reg(dimtree);
+		next = reglink(dimtree);
 		MOV_RN(next,idnode->ptr->dim2);
 		MUL(offset,next);
 		ADD(offset,dimtree->right->res_reg);
-		free_reg(dimtree);
-		use_reg(dimtree,offset);
-		free_reg(dimtree->right);
-		use_reg(dimtree->left,-1);
+		reg_unlink(dimtree);
+		change_reglink(dimtree,dimtree->left);
+		reg_unlink(dimtree->right);
 	}
 
 	ADD(base,offset);
-	use_reg(array,base);
-	use_reg(idnode,-1);
-	free_reg(dimtree);
+	change_reglink(array,idnode);
+	reg_unlink(dimtree);
 	return base;
 }
 
@@ -274,7 +341,7 @@ void codegen(node *root){
 	reg_ind next,left_reg,right_reg;
 	reg_ind cond;
 	node *temp;
-	unsigned int addr;
+	int addr;
 
 	if(root==NULL)
 		return;
@@ -285,32 +352,51 @@ void codegen(node *root){
 			codegen(root->right);
 			break;
 		case N_VAL:
-			next = get_reg(root);
-			if(root->datatype == T_INTEGER)
+			next = reglink(root);
+			if(root->datatype == T_INTEGER){
 				MOV_RN(next,root->val->num);
+			}
 			else if(root->datatype == T_STRING)
 				MOV_RS(next,root->val->str);
 			break;
+
+		case N_PTR:
 		case N_ID:
-			next = get_reg(root);
+			next = reglink(root);
 			addr = get_id_addr(root);
-			if(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY)
-				MOV_RN(next,addr);	//address of id
-			else
-				MOV_RA(next,addr);	//value of id
+
+			if(root->ptr->isGlobal){
+				MOV_RN(next,addr);
+			}
+			else{
+				MOV_RBP(next);
+				if(addr!=0){
+					reg_ind offset = get_reg();
+					MOV_RN(offset,addr);
+					ADD(next,offset);
+					free_reg();	//free offset
+				}
+				//next register now has address of id
+			}
+			if(root->nodetype==N_PTR)
+				MOVA_RA(next,next);		//address of variable pointed to
+			if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF))
+				MOVA_RA(next,next);	//value of id
 			break;
 		case N_ARR:
 			codegen(root->left);
 			codegen(root->right);
 			reg_ind addr_reg = get_array_addr(root);
-			if(!(PAR->nodetype==N_RD || IS_ASSIGNED))
+			if(!(PAR->nodetype==N_RD || IS_ASSIGNED || IS_REF))
 				MOVA_RA(addr_reg,addr_reg);
 			break;
 		case N_OP:
 			codegen(root->left);
 			codegen(root->right);
-			left_reg = root->left->res_reg;
-			right_reg = root->right->res_reg;
+			if(root->optype!=O_ADR){
+				left_reg = root->left->res_reg;
+				right_reg = root->right->res_reg;
+			}
 			switch(root->optype){
 				case O_ADD:
 					ADD(left_reg,right_reg);
@@ -326,8 +412,8 @@ void codegen(node *root){
 					break;
 				case O_ASN:
 					ASN(left_reg,right_reg);
-					free_reg(root->right);
-					free_reg(root->left);
+					reg_unlink(root->right);
+					reg_unlink(root->left);
 					break;
 				case O_LT:
 					LT(left_reg,right_reg);
@@ -347,23 +433,25 @@ void codegen(node *root){
 				case O_NE:
 					NE(left_reg,right_reg);
 					break;
+				case O_ADR:
+					change_reglink(root,root->right);
+					break;
 			}
-			if(root->optype!=O_ASN){
-				use_reg(root,left_reg);
-				use_reg(root->left,-1);
-				free_reg(root->right);
+			if(root->optype!=O_ASN && root->optype!=O_ADR){
+				change_reglink(root,root->left);
+				reg_unlink(root->right);
 			}
 			break;
 
 		case N_RD:
 			codegen(root->left);
 			put_read(root->left);
-			free_reg(root->left);
+			reg_unlink(root->left);
 			break;
 		case N_WR:
 			codegen(root->left);
 			put_write(root->left);
-			free_reg(root->left);
+			reg_unlink(root->left);
 			break;
 
 		case N_IF:
@@ -383,7 +471,7 @@ void codegen(node *root){
 				codegen(temp->left);
 			}
 			IF_EXIT;
-			free_reg(root->left);
+			reg_unlink(root->left);
 			break;
 
 		case N_WHILE:
@@ -395,7 +483,7 @@ void codegen(node *root){
 			codegen(temp);
 			JMP_WHILE;
 			WHILE_EXIT;
-			free_reg(root->left);
+			reg_unlink(root->left);
 			break;
 			
 		case N_BRK:
@@ -408,8 +496,62 @@ void codegen(node *root){
 				JMP_WHILE;
 			}
 			break;
+		case N_RET:
+			codegen(root->right);
+			reg_ind res = root->right->res_reg;
+			next = get_reg();
+			reg_ind temp = get_reg();
+			MOV_RBP(next);
+			MOV_RN(temp,-2);
+			ADD(next,temp);
+			MOVA_AR(next,res);
+			free_reg();
+			free_reg();
+			MOV("SP","BP");
+			printi("POP BP\n");
+			RET;
+			reg_unlink(root->right);
+			break;
+		case N_ARG:
+			codegen(root->left);
+			PUSH(root->left->res_reg);
+			reg_unlink(root->left);
+			break;
+		case N_FND:
+			LABEL_DEC(root->varname,0);
+			printi("PUSH BP\n");
+			MOV("BP","SP");
+			printi("MOV SP,%d\n",last_addr(root->ptr->ltable));
+			printi("ADD SP,BP\n");
+			codegen(root->left);
+			codegen(root->right);
+			break;
+		case N_FNC:
+			save_registers(num_reg());	//save registers in use
+			next = reglink(root);		//return value
+			codegen(root->right);		//push arguments
+			PUSH(next);
+			save_regstate();			//saving number of registers in use
+			free_all_reg();
+			LABEL_CALL(root->varname,0);	//function call
+			restore_regstate();			//restore register state
+			POP(next);					//get return value
+			int num_param=0;
+			param *p;
+			for_each_param(p,root->ptr->params){
+				num_param++;
+			}
+			next = get_reg();
+			while(num_param--){
+				POP(next);				//pop arguments
+			}
+			free_reg();
+			restore_registers();		//restore registers
+			break;
+		case N_BRKP:
+			BRKP;
+			break;
 	}
-
 }
 
 
@@ -428,6 +570,9 @@ int main(int argc, char *argv[]){
 	yyparse();
 	fclose(in_file);
 	fclose(ob_file);
-	
-	return 0;
+
+	char cmd[100];
+	sprintf(cmd,"./linker %s",obfilename);
+
+	return system(cmd);
 }

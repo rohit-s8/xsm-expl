@@ -11,65 +11,128 @@ void codegen(node*);
 void put_header();
 void terminate();
 int bindID(node*);
+int bindArray(node*);
+int bindFunc(node*);
+int translateAST(node*);
 YYSTYPE temp;
 YYSTYPE _if;
 YYSTYPE _while;
 ctr errors=0;
 extern ctr line_ctr;
-type t;
+ctr infunc=0;
+ctr indec=0;
+char *funcname;	//available when grammar reduced to Fheader
 %}
 
 
-%token NUM AROP1 AROP2 ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC
+%token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP ADR
 %right ASSIGN
 %left RELOP
-%left AROP1
-%left AROP2
+%left PLUS MINUS
+%left MUL DIV
+%left UMINUS
+%right REF ADR
 
+%start program
 %%
-program: Declarations stmlist
+program: Declarations Fdefblock Main
 	{
-	if(!errors){
-		put_header();
-		codegen($2);
-		terminate();
+	$$ = CON_NODE();
+	$$ = make_tree($$,$2,$3);
+	return translateAST($$);
 	}
-	else{
-		printf("Total number of errors:%d\n",errors);
-		exit(1);
-	}
-	return 0;
+
+	| Declarations Main
+	{
+		$$ = $2;
+		return translateAST($$);
 	}
        ;
 
-Declarations: DECL Declist ENDDEC';'
+Declarations: DECL {indec=1;} Declist ENDDEC';'
+			{
+				if(infunc){
+					make_lst($3,funcname);
+				}
+				else{
+					make_gst($3);
+				}
+				indec=0;
+			}
+			|DECL ENDDEC';'
+			{
+				if(infunc){
+					make_lst(NULL,funcname);
+				}
+				else{
+					make_gst(NULL);
+				}
+				indec=0;
+			}
 	    ;
 
 Declist: Declist Declaration
-       | Declaration
+	   {
+			$$ = CON_NODE();
+			$$ = make_tree($$,$1,$2);
+		}
+       | Declaration	{$$ = $1;}
 ;
 
-Declaration: Type varlist';'
+Declaration: Type varlist';'	
+		   {
+				$$ = DEC_NODE();
+				$$ = make_tree($$,$1,$2);
+			}
 	   ;
 
-Type: INT	{t = T_INTEGER;}
-    | STRING	{t = T_STRING;}
+Type: INT	{$$ = TYPE_NODE(T_INTEGER); }
+    | STRING	{$$ = TYPE_NODE(T_STRING); }
     ;
 
-varlist: varlist','variable
-       | variable
+varlist: varlist','Decvar
+       {
+	temp = CON_NODE();
+	$$ = make_tree(temp,$1,$3);
+	}
+       | Decvar		{$$ = $1;}
        ;
 
-variable: ID		{installID(single_entry($1,t));}
-	| Array		{installID(array_entry($1,t));}
+Decvar: variable	{$$ = $1;}
+	  | Funcdec		{$$ = $1;}
+;
+
+variable: ID		
+	{
+		if(!indec)
+			bindID($1);
+		$$ = $1;
+	}
+	| Array		
+	{
+		if(!indec)
+			bindArray($1);
+		$$ = $1;
+	}
+	| ptr
+	{
+		if(!indec)
+			bindPTR($1);
+		$$ = $1;
+	}
+;
+
+ptr: MUL ID %prec REF
+   {
+		$$ = PTR_NODE($2->varname);
+	}
 ;
 
 Array: ID Dimensions
      {
-	temp = makenode(N_ARR);
+	temp = ARR_NODE();
 	$$ = make_tree(temp,$1,$2);
 	}
-	
      ;
 
 Dimensions: Dimensions '['expr']'
@@ -80,55 +143,136 @@ Dimensions: Dimensions '['expr']'
 	  | '['expr']'		{$$ = $2;}
 ;
 
+Funcdec: ID'('params')'
+	   {
+			$$ = FNC_NODE($1->varname);
+			$$ = make_tree($$,NULL,$3);
+		}
+;
 
-stmlist: stmlist stmt 	{$$ = add_stmt_tree($1,$2);}
+Fdefblock: Fdefblock Fdef
+	 {
+		temp = CON_NODE();
+		$$ = make_tree(temp,$1,$2);
+	}
+	 | Fdef		{$$ = $1;}
+;
+
+Fdef: Fheader Fblock		
+    {
+	$$ = $2;
+	$$->ptr = lookup(funcname,gtable);
+	infunc = 0;
+	}
+    ;
+
+Fheader: Type ID '('params')'	
+       {
+		verify_func($1->datatype,$2->varname,$4);
+		infunc = 1;
+		indec = 0;
+		funcname = $2->varname;
+	}
+	| Type ID '('')'
+	{
+		verify_func($1->datatype,$2->varname,NULL);
+		infunc=1;
+		indec=0;
+		funcname = $2->varname;
+	}
+       ;
+
+params: params','param
+      {
+	temp = CON_NODE();
+	$$ = make_tree(temp,$1,$3);
+	}
+      | param	{$$ = $1;}
+;
+
+param: Type ID		{$$ = PARAM_NODE($1->datatype,$2->varname,0);}
+	 | Type ptr		{$$ = PARAM_NODE($1->datatype,$2->varname,1);}
+     ;
+
+Fblock: '{' Declarations stmtlist retstmt'}'
+	  {
+			$$ = FND_NODE(funcname);
+			$$ = make_tree($$,$3,$4);
+		}
+
+	| '{' Declarations retstmt '}'
+	{
+		$$ = FND_NODE(funcname);
+		$$ = make_tree($$,NULL,$3);
+	}
+      ;
+
+Main: INT MAIN'('')'{infunc=1;funcname="main";}	Fblock
+	{
+		$$ = $6;
+		$$->ptr = lookup(funcname,gtable);
+	}
+;
+
+
+stmtlist: stmtlist stmt 	{$$ = add_stmt_tree($1,$2);}
        | stmt		{$$ = $1;}
 	;
 
-stmt: READ'('ID')'';'		{bindID($3); $$ = make_tree($1,$3,NULL);}
-    | READ'('Array')'';'	{bindArray($3); $$=make_tree($1,$3,NULL);}
+stmt: READ'('variable')'';'	{$$ = make_tree($1,$3,NULL);}
     | WRITE'('expr')'';'	{$$ = make_tree($1,$3,NULL);}
 |assign		{$$=$1;}
 |ifstmt		{$$=$1;}
 |BREAK';'	{$$=$1;}
 |CONTINUE';'	{$$=$1;}
 |whilestmt	{$$=$1;}
+|retstmt	{$$=$1;}
+|BRKP';'	{$$=$1;}
 ;
 
-assign: ID ASSIGN expr';'
+retstmt: RET expr';'
+{
+	entry fentry = lookup(funcname,gtable);
+	if($2->datatype != fentry->datatype){
+		printf("return type mismatch\n");
+		exit(1);
+	}
+	$$ = make_tree($1,NULL,$2);
+}
+;
+
+assign: variable ASSIGN expr';'
       {
-	bindID($1);
 	if($1->datatype != $3->datatype){
-		yyerror("Type mismatch.");
+		yyerror("assignment error.");
 		printf("%s is of %s datatype\n",$1->varname,
 			printtype($1->datatype));
 	}
-	$$ = make_tree($2,$1,$3);}
-
-|	Array ASSIGN expr';'
-	{
-		bindArray($1);
-		if($1->datatype != $3->datatype){
-			yyerror("Type mismatch.");
-			printf("%s is of %s datatype\n",
-				$1->left->varname,printtype($1->datatype));
-		}
-		$$ = make_tree($2,$1,$3);
+	if($1->isptr && !$3->isptr){
+		yyerror("pointer error.");
+		printf("pointer %s being assigned %s value\n",$1->varname,
+				printtype($3->datatype));
+	}
+	if(!$1->isptr && $3->isptr){
+		yyerror("pointer error.");
+		printf("%s being assigned pointer value\n",$1->varname);
+	}
+	$$ = make_tree($2,$1,$3);
 	}
       ;
 
-ifstmt: IF'('expr')'THEN stmlist ELSE stmlist ENDIF';'
+ifstmt: IF'('expr')'THEN stmtlist ELSE stmtlist ENDIF';'
       {
-	if($3->datatype == T_STRING)
+	if($3->datatype != T_BOOL)
 		yyerror("invalid expression in ()\n");
 
 	temp=CON_NODE(); _if=make_tree(temp,$6,$8);
 	$$=make_tree($1,$3,_if);
       }
 
-      | IF'('expr')' THEN stmlist ENDIF';'
+      | IF'('expr')' THEN stmtlist ENDIF';'
       {
-	if($3->datatype == T_STRING)
+	if($3->datatype != T_BOOL)
 		yyerror("invalid expression in ()\n");
 
 	temp=CON_NODE(); _if=make_tree(temp,$6,NULL);
@@ -136,7 +280,7 @@ ifstmt: IF'('expr')'THEN stmlist ELSE stmlist ENDIF';'
       }
 ;
 
-whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
+whilestmt: WHILE'('expr')' DO stmtlist ENDWHILE';'
 	 {
 		if($3->datatype != T_BOOL)
 			yyerror("invalid expression in ()\n");
@@ -145,8 +289,34 @@ whilestmt: WHILE'('expr')' DO stmlist ENDWHILE';'
 	 }
 	 ;
 
-expr: expr AROP1 expr	
+expr: expr PLUS expr	
     {
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
+	printf("Operator \'%s\' expects integer operands\n",
+		printop($2->optype));
+	}
+	$$ = make_tree($2,$1,$3);
+	$$->datatype = T_INTEGER;
+	$$->isptr = $1->isptr | $3->isptr;
+    }
+
+    | expr MINUS expr
+    {
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
+	printf("Operator \'%s\' expects integer operands\n",
+		printop($2->optype));
+	}
+	$$ = make_tree($2,$1,$3);
+	$$->datatype = T_INTEGER;
+	$$->isptr = $1->isptr | $3->isptr;
+    }
+
+	| expr MUL expr
+    {
+	if($1->isptr || $3->isptr)
+		printf("operation not allowed on pointers\n");
 	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
 	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
@@ -156,8 +326,10 @@ expr: expr AROP1 expr
 	$$->datatype = T_INTEGER;
     }
 
-    | expr AROP2 expr
+	| expr DIV expr
     {
+	if($1->isptr || $3->isptr)
+		printf("operation not allowed on pointers\n");
 	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
 	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
@@ -166,9 +338,25 @@ expr: expr AROP1 expr
 	$$ = make_tree($2,$1,$3);
 	$$->datatype = T_INTEGER;
     }
+
+	| MINUS expr %prec UMINUS
+	{
+	if($2->isptr)
+		printf("operation not allowed on pointers\n");
+		if($2->datatype!=T_INTEGER){
+			yyerror("Type mismatch.");
+			printf("Operator \'%s\' expects integer operands\n",
+				printop($2->optype));
+		}
+		temp = VAL_NODE(T_INTEGER,VAL_NUM(0));
+		$$ = make_tree($1,temp,$2);
+		$$->datatype = T_INTEGER;
+	}
 
 | expr RELOP expr
-    {
+    {  
+	if($1->isptr || $3->isptr)
+		printf("operation not allowed on pointers\n");
 	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
 	yyerror("Type mismatch.");
 	printf("Operator \'%s\' expects integer operands\n",
@@ -179,21 +367,72 @@ expr: expr AROP1 expr
     }
 
 | '('expr')'	{$$=$2;}
-| ID	{bindID($1); $$=$1;}
-| Array	{bindArray($1); $$=$1;}
+| variable	{$$=$1;}
+| ID'('Arglist')'
+{
+	$$ = make_tree(FNC_NODE($1->varname),NULL,$3);
+	bindFunc($$);
+}
+| ID'('')'
+{
+	$$ = make_tree(FNC_NODE($1->varname),NULL,NULL);
+	bindFunc($$);
+}
+| ADR variable
+{
+	$$ = make_tree($1,NULL,$2);
+	$$->datatype = $2->datatype;
+	$$->isptr = 1;
+}
 | NUM	{$$=$1;}
 | STR	{$$=$1;}
 ;
+
+Arglist: Arglist','Arg	{$$ = make_tree(CON_NODE(),$1,$3);}
+	   | Arg		{$$ = $1;}
+;
+
+Arg: expr
+   {
+		$$ = make_tree(ARG_NODE(),$1,NULL);
+		$$->datatype = $1->datatype;
+		$$->isptr = $1->isptr;
+	}
+   ;
 %%
 
 int bindID(node *idnode){
-	idnode->ptr = lookup(idnode->varname);
+	entry fentry = lookup(funcname,gtable);
+	idnode->ptr = lookup(idnode->varname,fentry->ltable);
+	if(!idnode->ptr)
+		idnode->ptr = lookup(idnode->varname,gtable);
 	if(!idnode->ptr){
-		yyerror("variable ");
+		yyerror("binding error.");
 		printf("%s not declared\n",idnode->varname);
 		return 0;
 	}
 	idnode->datatype = idnode->ptr->datatype;
+	idnode->isptr = idnode->ptr->isptr;
+	return 1;
+}
+
+int bindPTR(node *ptrnode){
+	entry fentry = lookup(funcname,gtable);
+	ptrnode->ptr = lookup(ptrnode->varname,fentry->ltable);
+	if(!ptrnode->ptr)
+		ptrnode->ptr = lookup(ptrnode->varname,gtable);
+	if(!ptrnode->ptr){
+		yyerror("binding error.\n");
+		printf("%s not declared\n",ptrnode->varname);
+		return 0;
+	}
+	else if(!ptrnode->ptr->isptr){
+		yyerror("binding error.");
+		printf("%s is not a pointer\n",ptrnode->varname);
+		return 0;
+	}
+	ptrnode->datatype = ptrnode->ptr->datatype;
+	ptrnode->isptr = 0;
 	return 1;
 }
 
@@ -201,7 +440,10 @@ int bindArray(node *array){
 	node *idnode = array->left;
 	node *dimtree = array->right;
 
-	idnode->ptr = lookup(idnode->varname);
+	entry fentry = lookup(funcname,gtable);
+	idnode->ptr = lookup(idnode->varname,fentry->ltable);
+	if(!idnode->ptr)
+		idnode->ptr = lookup(idnode->varname,gtable);
 	if(!idnode->ptr){
 		yyerror("variable ");
 		printf("%s not declared\n",idnode->varname);
@@ -222,11 +464,70 @@ int bindArray(node *array){
 	}
 
 	array->datatype = idnode->datatype = idnode->ptr->datatype;
+	array->varname = idnode->varname;
 	return 1;
 }
 
+int bindFunc(node *funcnode){
+	node *arglist = funcnode->right;
+
+	funcnode->ptr = lookup(funcnode->varname,gtable);
+	if(!funcnode->ptr){
+		printf("function %s not declared\n",funcnode->varname);
+		return 0;
+	}
+
+	verify_args(funcnode->ptr->params,arglist);
+	funcnode->datatype = funcnode->ptr->datatype;
+	return 1;
+}
+
+void verify_args(param *list, node *args){
+	param *args_type = (param*)malloc(sizeof(param));
+	param_args_list(args,args_type);
+
+	param *p,*q;
+	for(p=list->next,q=args_type->next;p!=NULL;p=p->next,q=q->next){
+		if(!q){
+			yyerror("function expects more arguments");
+			exit(1);
+		}
+
+		if(p->datatype != q->datatype){
+			yyerror("parameter type mismatch");
+			exit(1);
+		}
+
+		if(p->isptr != q->isptr){
+			yyerror("pointer mismatch");
+			exit(1);
+		}
+	}
+
+	if(q){
+		yyerror("function expects less arguments");
+		exit(1);
+	}
+}
+
+
+
+int translateAST(node *pr){
+	if(!errors){
+		put_header();
+		codegen(pr);
+		terminate();
+	}
+	else{
+		printf("Total number of errors:%d\n",errors);
+		exit(1);
+	}
+	return 0;
+}
+
+
 int yyerror(const char* s){
 	++errors;
-	printf("error:%d:%s",line_ctr,s);
+	printf("error:%d:%s\n",line_ctr,s);
 	return 1;
 }

@@ -10,27 +10,9 @@ ctr line_ctr=1;
 %option noyywrap
 number	[0-9]+
 string [\"][^\"]*[\"]
-id	[a-z]
+id	[A-Za-z]+[0-9]*
 
 %%
-
-{number}	{
-		int num=atoi(yytext);
-		yylval=VAL_NODE(T_INTEGER,VAL_NUM(num));
-		return NUM;
-		}
-
-{string}	{
-		char *temp = strndup(yytext+1,yyleng-2);
-		yylval=VAL_NODE(T_STRING,VAL_STR(temp));
-		return STR;
-		}
-
-{id}		{
-		char *temp = strndup(yytext,yyleng);
-		yylval=ID_NODE(temp);
-		return ID;
-		}
 
 "decl"		{return DECL;}
 
@@ -62,6 +44,32 @@ id	[a-z]
 
 "string"	{return STRING;}
 
+"main"		{return MAIN;}
+
+"return"	{yylval=RET_NODE(); return RET;}
+
+"breakpoint"	{yylval=BRKP_NODE(); return BRKP;}
+
+{number}	{
+		int num=atoi(yytext);
+		yylval=VAL_NODE(T_INTEGER,VAL_NUM(num));
+		return NUM;
+		}
+
+{string}	{
+		char *temp = strndup(yytext+1,yyleng-2);
+		yylval=VAL_NODE(T_STRING,VAL_STR(temp));
+		return STR;
+		}
+
+{id}		{
+		char *temp = strndup(yytext,yyleng);
+		yylval=ID_NODE(temp);
+		return ID;
+		}
+
+[&]		{yylval=OP_NODE(O_ADR); return ADR;}
+
 [<]		{yylval=OP_NODE(O_LT); return RELOP;}
 
 [>]		{yylval=OP_NODE(O_GT); return RELOP;}
@@ -74,13 +82,13 @@ id	[a-z]
 
 "!="		{yylval=OP_NODE(O_NE); return RELOP;}
 
-[+]		{yylval=OP_NODE(O_ADD); return AROP1;}
+[+]		{yylval=OP_NODE(O_ADD); return PLUS;}
 
-[-]		{yylval=OP_NODE(O_SUB); return AROP1;}
+[-]		{yylval=OP_NODE(O_SUB); return MINUS;}
 
-[*]		{yylval=OP_NODE(O_MUL); return AROP2;}
+[*]		{yylval=OP_NODE(O_MUL); return MUL;}
 
-[/]		{yylval=OP_NODE(O_DIV); return AROP2;}
+[/]		{yylval=OP_NODE(O_DIV); return DIV;}
 
 [=]		{yylval=OP_NODE(O_ASN); return ASSIGN;}
 
@@ -88,7 +96,7 @@ id	[a-z]
 
 [\n]		{++line_ctr;}
 
-[();,]		{return *yytext;}
+[{}();,]	{return *yytext;}
 
 "["		{return *yytext;}
 

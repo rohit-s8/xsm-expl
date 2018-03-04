@@ -10,7 +10,7 @@ ctr inst_ctr;
 %}
 
 %option noyywrap
-label	"L_"[A-Z]+[0-9]*	
+label	"L_"[a-zA-Z]+[0-9]*	
 
 %%
 
@@ -55,6 +55,7 @@ int main(int argc, char *argv[]){
 	yylex();
 	fclose(in);
 	fclose(temp);
+	printf("Code size: %d words\n", inst_ctr-2048);
 
 	exefilename = exefile(argv[1]);
 	yyin = fopen(".temp","r");
@@ -62,5 +63,6 @@ int main(int argc, char *argv[]){
 	yylex();
 	fclose(yyin);
 	fclose(yyout);
+
 	return 0;
 }
