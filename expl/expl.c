@@ -265,6 +265,7 @@ void put_header(){
 }
 
 static void put_write(node *n){
+	save_registers(num_reg());
 	reg_ind temp = get_reg();
 	MOV_RS(temp,"Write");
 	PUSH(temp);
@@ -273,15 +274,20 @@ static void put_write(node *n){
 	PUSH(n->res_reg);
 	PUSH(temp);
 	PUSH(temp);
+	save_regstate();
+	free_all_reg();
 	CALL(0);
+	restore_regstate();
 	int i;
 	for(i=0;i<5;i++){
        	POP(temp);
 	}
 	free_reg();
+	restore_registers();
 }
 
 static void put_read(node *n){
+	save_registers(num_reg());
 	reg_ind temp = get_reg();
 	MOV_RS(temp,"Read");
 	PUSH(temp);
@@ -290,12 +296,16 @@ static void put_read(node *n){
 	PUSH(n->res_reg);
 	PUSH(temp);
 	PUSH(temp);
+	save_regstate();
+	free_all_reg();
 	CALL(0);
+	restore_regstate();
 	int i;
 	for(i=0;i<5;i++){
        	POP(temp);
 	}
 	free_reg();
+	restore_registers();
 }
 
 void terminate(){
