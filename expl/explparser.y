@@ -454,11 +454,25 @@ int bindArray(node *array){
 		printf("%s not declared as array\n",idnode->varname);
 		return 0;
 	}
-	if(dimtree->datatype != T_INTEGER){
+	if(dimtree->nodetype==N_CON){
+		if(!idnode->ptr->dim2){
+			yyerror("array is 1 dimensional");
+			return 0;
+		}
 		node *r = dimtree->left;
 		node *c = dimtree->right;
 		if(r->datatype != T_INTEGER || c->datatype != T_INTEGER){
-			yyerror("array indices must be integers\n");
+			yyerror("array indices must be integers");
+			return 0;
+		}
+	}
+	else{
+		if(idnode->ptr->dim2){
+			yyerror("array is 2 dimensional");
+			return 0;
+		}
+		if(dimtree->datatype != T_INTEGER){
+			yyerror("array indices must be integers");
 			return 0;
 		}
 	}
