@@ -90,6 +90,8 @@ id	[A-Za-z]+[0-9]*
 
 [/]		{yylval=OP_NODE(O_DIV); return DIV;}
 
+[%]		{yylval=OP_NODE(O_MOD); return MOD;}
+
 [=]		{yylval=OP_NODE(O_ASN); return ASSIGN;}
 
 [ \t]

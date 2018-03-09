@@ -37,6 +37,7 @@ typedef enum Operator{
 	O_SUB,
 	O_MUL,
 	O_DIV,
+	O_MOD,
 	O_ASN,
 	O_LT,
 	O_LTE,
@@ -44,7 +45,10 @@ typedef enum Operator{
 	O_GTE,
 	O_EQ,
 	O_NE,
-	O_ADR
+	O_ADR,
+	O_AND,
+	O_OR,
+	O_NOT
 }Operator;
 
 //supported data types

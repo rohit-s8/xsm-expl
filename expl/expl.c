@@ -61,6 +61,10 @@
 #define DIV(x,y)\
 	printi("DIV R%d,R%d\n",x,y)
 
+/** MOD Rx,Ry **/
+#define MOD(x,y)\
+	printi("MOD R%d,R%d\n",x,y)
+
 /** MOV [ADDRESS=x],Ry **/
 #define ASN(x,y)\
 	MOVA_AR(x,y)
@@ -388,7 +392,7 @@ void codegen(node *root){
 				}
 				//next register now has address of id
 			}
-			if(root->nodetype==N_PTR)
+			if(root->nodetype==N_PTR || (root->isptr && IS_ARRAY))
 				MOVA_RA(next,next);		//address of variable pointed to
 			if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF))
 				MOVA_RA(next,next);	//value of id
@@ -419,6 +423,9 @@ void codegen(node *root){
 					break;
 				case O_DIV:
 					DIV(left_reg,right_reg);
+					break;
+				case O_MOD:
+					MOD(left_reg,right_reg);
 					break;
 				case O_ASN:
 					ASN(left_reg,right_reg);

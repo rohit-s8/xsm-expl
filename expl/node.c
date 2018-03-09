@@ -364,3 +364,13 @@ int last_addr(symtable *table){
 	else
 		return 0;
 }
+
+void print_symtable(symtable *table){
+	entry e;
+	printf("name\ttype\tsize\tbinding\tdim1\tdim2\tisGlobal\n");
+	for_each_entry(e,table){
+		printf("%s\t%s\t%-4u\t%-7d\t%-4u\t%-4u\t%-2d\n",
+				e->varname,printtype(e->datatype),e->size,
+				e->bind_addr,e->dim1,e->dim2,e->isGlobal);
+	}
+}

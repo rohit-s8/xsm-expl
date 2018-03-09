@@ -25,11 +25,12 @@ char *funcname;	//available when grammar reduced to Fheader
 %}
 
 
-%token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP ADR
+%token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP ADR MOD 
 %right ASSIGN
 %left RELOP
 %left PLUS MINUS
-%left MUL DIV
+%left MUL DIV 
+%right MOD
 %left UMINUS
 %right REF ADR
 
@@ -53,9 +54,15 @@ Declarations: DECL {indec=1;} Declist ENDDEC';'
 			{
 				if(infunc){
 					make_lst($3,funcname);
+					entry f = lookup(funcname,gtable);
+					printf("%s\n",funcname);
+					print_symtable(f->ltable);
+					printf("\n");
 				}
 				else{
 					make_gst($3);
+					print_symtable(gtable);
+					printf("\n");
 				}
 				indec=0;
 			}
@@ -339,6 +346,19 @@ expr: expr PLUS expr
 	$$->datatype = T_INTEGER;
     }
 
+	| expr MOD expr
+    {
+	if($1->isptr || $3->isptr)
+		printf("operation not allowed on pointers\n");
+	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	yyerror("Type mismatch.");
+	printf("Operator \'%s\' expects integer operands\n",
+		printop($2->optype));
+	}
+	$$ = make_tree($2,$1,$3);
+	$$->datatype = T_INTEGER;
+    }
+
 	| MINUS expr %prec UMINUS
 	{
 	if($2->isptr)
@@ -440,6 +460,9 @@ int bindArray(node *array){
 	node *idnode = array->left;
 	node *dimtree = array->right;
 
+	if(!bindID(idnode))
+		return 0;
+/*
 	entry fentry = lookup(funcname,gtable);
 	idnode->ptr = lookup(idnode->varname,fentry->ltable);
 	if(!idnode->ptr)
@@ -449,7 +472,8 @@ int bindArray(node *array){
 		printf("%s not declared\n",idnode->varname);
 		return 0;
 	}
-	if(!idnode->ptr->dim1){
+*/
+	if(!idnode->ptr->dim1 && !idnode->isptr){
 		yyerror("variable ");
 		printf("%s not declared as array\n",idnode->varname);
 		return 0;
@@ -467,7 +491,7 @@ int bindArray(node *array){
 		}
 	}
 	else{
-		if(idnode->ptr->dim2){
+		if(idnode->ptr->dim2 && !idnode->isptr){
 			yyerror("array is 2 dimensional");
 			return 0;
 		}
@@ -477,8 +501,9 @@ int bindArray(node *array){
 		}
 	}
 
-	array->datatype = idnode->datatype = idnode->ptr->datatype;
+	array->datatype = idnode->datatype;
 	array->varname = idnode->varname;
+	array->isptr = 0;
 	return 1;
 }
 
