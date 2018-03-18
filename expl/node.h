@@ -73,19 +73,19 @@ int last_addr(symtable *table);
 
 /** Identifier node **/
 #define ID_NODE(varname)\
-	make_node(N_ID,varname,NON,NON,NULL,0)
+	make_node(N_ID,varname,NON,NULL,NULL,0)
 
 /** Pointer deferencing/declaration node **/
 #define PTR_NODE(varname)\
-	make_node(N_PTR,varname,NON,NON,NULL,0)
+	make_node(N_PTR,varname,NON,NULL,NULL,0)
 
 /** Operator node **/
 #define OP_NODE(optype)\
-	make_node(N_OP,NULL,optype,NON,NULL,0)
+	make_node(N_OP,NULL,optype,NULL,NULL,0)
 
 /** Type node **/
-#define TYPE_NODE(datatype)\
-	make_node(N_TYPE,NULL,NON,datatype,NULL,0)
+#define TYPE_NODE(tname)\
+	make_node(N_TYPE,tname,NON,Tlookup(tname),NULL,0)
 
 /** parameter node **/
 #define PARAM_NODE(datatype,paramname,isptr)\
@@ -93,14 +93,14 @@ int last_addr(symtable *table);
 
 /* function call node */
 #define FNC_NODE(funcname)\
-	make_node(N_FNC,funcname,NON,NON,NULL,0)
+	make_node(N_FNC,funcname,NON,NULL,NULL,0)
 
 /* function defintion node */
 #define FND_NODE(funcname)\
-	make_node(N_FND,funcname,NON,NON,NULL,0)
+	make_node(N_FND,funcname,NON,NULL,NULL,0)
 
 #define makenode(nodetype)\
-	make_node(nodetype,NULL,NON,NON,NULL,0)
+	make_node(nodetype,NULL,NON,NULL,NULL,0)
 /** Connector node **/
 #define CON_NODE()\
 	makenode(N_CON)
@@ -148,6 +148,22 @@ int last_addr(symtable *table);
 /** breakpoint node **/
 #define BRKP_NODE()\
 	makenode(N_BRKP)
+
+ /** initialize node **/
+#define INIT_NODE()\
+	makenode(N_INIT)
+
+/** alloc node **/
+#define ALOC_NODE()\
+	makenode(N_ALOC)
+
+/** free node **/
+#define FREE_NODE()\
+	makenode(N_FREE)
+
+/** NULL node **/
+#define NULL_NODE()\
+	makenode(N_NULL)
 
 /** make integer or string values **/
 #define VAL_NUM(N)\

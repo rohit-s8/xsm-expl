@@ -14,13 +14,23 @@ id	[A-Za-z]+[0-9]*
 
 %%
 
+"type"		{return TYPE;}
+
 "decl"		{return DECL;}
 
 "enddec"	{return ENDDEC;}
 
+"NULL"		{yylval=NULL_NODE(); return TNULL;}
+
 "read"		{yylval=RD_NODE(); return READ;}
 
 "write"		{yylval=WR_NODE(); return WRITE;}
+
+"initialize"	{yylval=INIT_NODE(); return INIT;}
+
+"alloc"		{yylval=ALOC_NODE(); return ALLOC;}
+
+"free"		{yylval=FREE_NODE(); return FREE;}
 
 "if"		{yylval=IF_NODE(); return IF;}
 
@@ -98,7 +108,7 @@ id	[A-Za-z]+[0-9]*
 
 [\n]		{++line_ctr;}
 
-[{}();,]	{return *yytext;}
+[{}();,.]	{return *yytext;}
 
 "["		{return *yytext;}
 

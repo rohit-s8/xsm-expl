@@ -176,6 +176,7 @@
 	PAR->nodetype==N_ARR && PAR->left==root
 #define IS_REF\
 	PAR->optype==O_ADR
+#define IS_FREED	PAR->nodetype==N_FREE
 
 reg_ind r;
 ctr if_ctr;
@@ -253,6 +254,26 @@ static void change_reglink(node *n, node *m){
 	m->res_reg = -1;
 }
 
+static void library_call(const char* fcode, reg_ind arg1, reg_ind arg2,
+							reg_ind ret){
+	reg_ind temp = get_reg();
+	MOV_RS(temp,fcode);
+	PUSH(temp);
+	PUSH(arg1);
+	PUSH(arg2);
+	PUSH(temp);
+	PUSH(ret);
+	save_regstate();
+	free_all_reg();
+	CALL(0);
+	restore_regstate();
+	POP(ret);
+	int i;
+	for(i=0; i<4; i++)
+		POP(temp);
+	free_reg();
+}
+
 void put_header(){
 	printi("%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
 		0,2056,0,0,0,0,0,0);
@@ -270,45 +291,40 @@ void put_header(){
 
 static void put_write(node *n){
 	save_registers(num_reg());
-	reg_ind temp = get_reg();
-	MOV_RS(temp,"Write");
-	PUSH(temp);
-	MOV_RN(temp,-2);
-	PUSH(temp);
-	PUSH(n->res_reg);
-	PUSH(temp);
-	PUSH(temp);
-	save_regstate();
-	free_all_reg();
-	CALL(0);
-	restore_regstate();
-	int i;
-	for(i=0;i<5;i++){
-       	POP(temp);
-	}
+	reg_ind syscallno = get_reg();
+	MOV_RN(syscallno,-2);
+	library_call("Write",syscallno,n->res_reg,n->res_reg);
 	free_reg();
 	restore_registers();
 }
 
 static void put_read(node *n){
 	save_registers(num_reg());
-	reg_ind temp = get_reg();
-	MOV_RS(temp,"Read");
-	PUSH(temp);
-	MOV_RN(temp,-1);
-	PUSH(temp);
-	PUSH(n->res_reg);
-	PUSH(temp);
-	PUSH(temp);
-	save_regstate();
-	free_all_reg();
-	CALL(0);
-	restore_regstate();
-	int i;
-	for(i=0;i<5;i++){
-       	POP(temp);
-	}
+	reg_ind syscallno = get_reg();
+	MOV_RN(syscallno,-1);
+	library_call("Read",syscallno,n->res_reg,n->res_reg);
 	free_reg();
+	restore_registers();
+}
+
+static void put_init(){
+	save_registers(num_reg());
+	reg_ind temp = get_reg();
+	library_call("Heapset",temp,temp,temp);
+	free_reg();
+	restore_registers();
+}
+
+static void put_alloc(reg_ind ret){
+	reg_ind size = get_reg();
+	MOV_RN(size,8);
+	library_call("Alloc",size,size,ret);
+	free_reg();
+}
+
+static void put_free(node *id){
+	save_registers(num_reg());
+	library_call("Free",id->res_reg,id->res_reg,id->res_reg);
 	restore_registers();
 }
 
@@ -376,26 +392,41 @@ void codegen(node *root){
 
 		case N_PTR:
 		case N_ID:
-			next = reglink(root);
-			addr = get_id_addr(root);
+			if(!root->left){
+				next = reglink(root);
+				addr = get_id_addr(root);
 
-			if(root->ptr->isGlobal){
-				MOV_RN(next,addr);
+				if(root->ptr->isGlobal){
+					MOV_RN(next,addr);
+				}
+				else{
+					MOV_RBP(next);
+					if(addr!=0){
+						reg_ind offset = get_reg();
+						MOV_RN(offset,addr);
+						ADD(next,offset);
+						free_reg();	//free offset
+					}
+					//next register now has address of id
+				}
+				if(root->nodetype==N_PTR || (root->isptr && IS_ARRAY))
+					MOVA_RA(next,next);		//address of variable pointed to
+				if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF))
+					MOVA_RA(next,next);		//value of id
 			}
 			else{
-				MOV_RBP(next);
-				if(addr!=0){
-					reg_ind offset = get_reg();
-					MOV_RN(offset,addr);
-					ADD(next,offset);
-					free_reg();	//free offset
-				}
-				//next register now has address of id
+				codegen(root->left);
+				type t = root->left->datatype;
+				field *f;
+				f = Flookup(t->flist,root->varname);
+				next = get_reg();
+				MOV_RN(next,f->offset);
+				ADD(root->left->res_reg,next);
+				free_reg();
+				if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF))
+					MOVA_RA(root->left->res_reg,root->left->res_reg);
+				change_reglink(root,root->left);
 			}
-			if(root->nodetype==N_PTR || (root->isptr && IS_ARRAY))
-				MOVA_RA(next,next);		//address of variable pointed to
-			if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF))
-				MOVA_RA(next,next);	//value of id
 			break;
 		case N_ARR:
 			codegen(root->left);
@@ -568,6 +599,26 @@ void codegen(node *root){
 		case N_BRKP:
 			BRKP;
 			break;
+
+		case N_INIT:
+			put_init();
+			break;
+		case N_ALOC:
+			save_registers(num_reg());
+			next = reglink(root);
+			put_alloc(next);
+			restore_registers();
+			break;
+		case N_FREE:
+			codegen(root->left);
+			put_free(root->left);
+			reg_unlink(root->left);
+			codegen(root->right);
+			break;
+		case N_NULL:
+			next = reglink(root);
+			MOV_RN(next,0);
+			break;
 	}
 }
 
@@ -584,6 +635,7 @@ int main(int argc, char *argv[]){
 	yyset_in(in_file);
 	free_all_reg();
 	reset_counters();
+	ttable_init();
 	yyparse();
 	fclose(in_file);
 	fclose(ob_file);

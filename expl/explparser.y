@@ -11,8 +11,11 @@ void codegen(node*);
 void put_header();
 void terminate();
 int bindID(node*);
+int verify_field(type,node*);
+int bindPTR(node*);
 int bindArray(node*);
 int bindFunc(node*);
+void verify_args(param*,node*);
 int translateAST(node*);
 YYSTYPE temp;
 YYSTYPE _if;
@@ -25,7 +28,10 @@ char *funcname;	//available when grammar reduced to Fheader
 %}
 
 
-%token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP ADR MOD 
+%token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
+%token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
+%token ADR MOD TYPE INIT ALLOC FREE TNULL
+
 %right ASSIGN
 %left RELOP
 %left PLUS MINUS
@@ -36,37 +42,79 @@ char *funcname;	//available when grammar reduced to Fheader
 
 %start program
 %%
-program: Declarations Fdefblock Main
+program: Typedefs Declarations Fdefblock Main
 	{
 	$$ = CON_NODE();
-	$$ = make_tree($$,$2,$3);
+	$$ = make_tree($$,$3,$4);
 	return translateAST($$);
 	}
 
-	| Declarations Main
+	| Typedefs Declarations Main
 	{
-		$$ = $2;
+		$$ = $3;
 		return translateAST($$);
 	}
+
        ;
+
+Nothing:	{$$=NULL;}
+	   ;
+
+Typedefs: Typelist		{ttable_update($1);}
+		| Nothing
+;
+
+Typelist: Typelist Typedef
+		{
+			$$ = CON_NODE();
+			$$ = make_tree($$,$1,$2);
+		}
+		| Typedef	{$$=$1;}
+;
+
+Typedef: TYPE ID '{' Fields '}'
+	   {
+			$$ = TYPE_NODE($2->varname);
+			$$ = make_tree($$,NULL,$4);
+		}
+;
+
+Fields: Fields field
+	  {
+			$$ = CON_NODE();
+			$$ = make_tree($$,$1,$2);
+		}
+		| field		{$$=$1;}
+;
+
+field: Type ID';'
+	 {
+		$$ = DEC_NODE();
+		$$ = make_tree($$,$1,$2);
+	}
+;
 
 Declarations: DECL {indec=1;} Declist ENDDEC';'
 			{
 				if(infunc){
 					make_lst($3,funcname);
+/*
 					entry f = lookup(funcname,gtable);
 					printf("%s\n",funcname);
 					print_symtable(f->ltable);
 					printf("\n");
+*/
 				}
 				else{
 					make_gst($3);
+/*
 					print_symtable(gtable);
 					printf("\n");
+*/
 				}
 				indec=0;
 			}
-			|DECL ENDDEC';'
+			| DECL ENDDEC';'
 			{
 				if(infunc){
 					make_lst(NULL,funcname);
@@ -93,8 +141,9 @@ Declaration: Type varlist';'
 			}
 	   ;
 
-Type: INT	{$$ = TYPE_NODE(T_INTEGER); }
-    | STRING	{$$ = TYPE_NODE(T_STRING); }
+Type: INT	{$$ = TYPE_NODE("int");}
+    | STRING	{$$ = TYPE_NODE("string");}
+	| ID		{$$ = TYPE_NODE($1->varname);}
     ;
 
 varlist: varlist','Decvar
@@ -228,13 +277,23 @@ stmtlist: stmtlist stmt 	{$$ = add_stmt_tree($1,$2);}
 
 stmt: READ'('variable')'';'	{$$ = make_tree($1,$3,NULL);}
     | WRITE'('expr')'';'	{$$ = make_tree($1,$3,NULL);}
-|assign		{$$=$1;}
-|ifstmt		{$$=$1;}
-|BREAK';'	{$$=$1;}
-|CONTINUE';'	{$$=$1;}
-|whilestmt	{$$=$1;}
-|retstmt	{$$=$1;}
-|BRKP';'	{$$=$1;}
+	| INIT'('')'';'			{$$ = $1;}
+	| FREE'('ID')'';'
+	{
+		bindID($3);
+		if(basic_type($3->datatype))
+			yyerror("cannot free in built type");
+		temp = OP_NODE(O_EQ);
+		temp = make_tree(temp,$3,NULL_NODE());
+		$$ = make_tree($1,$3,temp);
+	}
+	|assign		{$$=$1;}
+	|ifstmt		{$$=$1;}
+	|BREAK';'	{$$=$1;}
+	|CONTINUE';'	{$$=$1;}
+	|whilestmt	{$$=$1;}
+	|retstmt	{$$=$1;}
+	|BRKP';'	{$$=$1;}
 ;
 
 retstmt: RET expr';'
@@ -250,6 +309,8 @@ retstmt: RET expr';'
 
 assign: variable ASSIGN expr';'
       {
+	if($3->datatype == T_VOID)
+		$3->datatype = $1->datatype;
 	if($1->datatype != $3->datatype){
 		yyerror("assignment error.");
 		printf("%s is of %s datatype\n",$1->varname,
@@ -266,7 +327,30 @@ assign: variable ASSIGN expr';'
 	}
 	$$ = make_tree($2,$1,$3);
 	}
-      ;
+	| FAccess ASSIGN expr';'
+	{
+		if($3->datatype == T_VOID)
+			$3->datatype = $1->datatype;
+		if($1->datatype != $3->datatype){
+			yyerror("assignment error.");
+			printf("%s is of %s datatype\n",$1->varname,
+				printtype($1->datatype));
+		}
+		$$ = make_tree($2,$1,$3);
+	}
+	| variable ASSIGN ALLOC'('')'';'
+	{
+		if(basic_type($1->datatype))
+			yyerror("cannot allocate to in-built type");
+		$$ = make_tree($2,$1,$3);
+	}
+	| FAccess ASSIGN ALLOC'('')'';'
+	{
+		if(basic_type($1->datatype))
+			yyerror("cannot allocate to in-built type");
+		$$ = make_tree($2,$1,$3);
+	}
+; 
 
 ifstmt: IF'('expr')'THEN stmtlist ELSE stmtlist ENDIF';'
       {
@@ -375,11 +459,15 @@ expr: expr PLUS expr
 
 | expr RELOP expr
     {  
+	if($1->datatype == T_VOID)
+		$1->datatype = $3->datatype;
+	else if($3->datatype == T_VOID)
+		$3->datatype = $1->datatype;
 	if($1->isptr || $3->isptr)
 		printf("operation not allowed on pointers\n");
-	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
+	if($1->datatype==T_STRING || $3->datatype==T_STRING){
 	yyerror("Type mismatch.");
-	printf("Operator \'%s\' expects integer operands\n",
+	printf("Operator \'%s\' cannot evaluate string operands\n",
 		printop($2->optype));
 	}
 	$$ = make_tree($2,$1,$3);
@@ -388,6 +476,7 @@ expr: expr PLUS expr
 
 | '('expr')'	{$$=$2;}
 | variable	{$$=$1;}
+| FAccess	{$$=$1;}
 | ID'('Arglist')'
 {
 	$$ = make_tree(FNC_NODE($1->varname),NULL,$3);
@@ -406,6 +495,7 @@ expr: expr PLUS expr
 }
 | NUM	{$$=$1;}
 | STR	{$$=$1;}
+| TNULL	{$$=$1; $$->datatype = T_VOID;}
 ;
 
 Arglist: Arglist','Arg	{$$ = make_tree(CON_NODE(),$1,$3);}
@@ -419,7 +509,38 @@ Arg: expr
 		$$->isptr = $1->isptr;
 	}
    ;
+
+FAccess: FAccess'.'ID
+		{
+			if(!verify_field($1->datatype,$3)){
+				yyerror("field access error");
+				printf("field %s not defined for type %s\n",
+						$3->varname,printtype($1->datatype));
+			}
+			$$ = make_tree($3,$1,NULL);
+		}
+	   | ID'.'ID
+		{
+			bindID($1);
+			if(!verify_field($1->datatype,$3)){
+				yyerror("field access error");
+				printf("field %s not defined for type %s\n",
+						$3->varname,printtype($1->datatype));
+			}
+			$$ = make_tree($3,$1,NULL);
+		}
+;
+			
 %%
+
+int verify_field(type t, node *idnode){
+	field *f;
+	f = Flookup(t->flist,idnode->varname);
+	if(!f)
+		return 0;
+	idnode->datatype = f->t;
+	return 1;
+}
 
 int bindID(node *idnode){
 	entry fentry = lookup(funcname,gtable);
@@ -532,6 +653,8 @@ void verify_args(param *list, node *args){
 			exit(1);
 		}
 
+		if(q->datatype == T_VOID)
+			q->datatype = p->datatype;
 		if(p->datatype != q->datatype){
 			yyerror("parameter type mismatch");
 			exit(1);

@@ -51,44 +51,6 @@ node* add_stmt_tree(node *main, node *_new){
 	return temp;
 }
 
-char* printop(Operator op){
-	switch(op){
-		case O_ADD:
-			return "+";
-		case O_SUB:
-			return "-";
-		case O_MUL:
-			return "*";
-		case O_DIV:
-			return "/";
-		case O_LT:
-			return "<";
-		case O_LTE:
-			return "<=";
-		case O_GT:
-			return ">";
-		case O_GTE:
-			return ">=";
-		case O_EQ:
-			return "==";
-		case O_NE:
-			return "!=";
-	}
-	return NULL;
-}
-
-char* printtype(type t){
-	switch(t){
-		case T_INTEGER:
-			return "integer";
-		case T_STRING:
-			return "string";
-		case T_BOOL:
-			return "bool";
-	}
-	return NULL;
-}
-
 int addr_off = 0;	//address offset from BP
 symtable *gtable;	//global symbol table
 extern ctr line_ctr;
