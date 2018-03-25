@@ -1,0 +1,24 @@
+# stuff in all directories
+*.o
+y.tab.c
+y.tab.h
+lex.yy.c
+
+# expl stuff
+/expl/progs/
+/expl/expl[0-9]
+/expl/linker
+/expl/labeltranslator.c
+/expl/.*
+
+# xfs-interface stuff
+/xfs-interface/xfs-interface
+*.xfs
+
+# spl stuff
+/spl/spl
+*.spl
+
+# xsm stuff
+xsm
+*.xsm
