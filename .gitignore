@@ -17,8 +17,7 @@ lex.yy.c
 
 # spl stuff
 /spl/spl
-*.spl
 
 # xsm stuff
-xsm
-*.xsm
+/xsm_dev/xsm
+/xsm_dev/*.xsm
