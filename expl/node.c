@@ -2,9 +2,10 @@
 #include <string.h>
 #include "types.h"
 #include "node.h"
+#include "class.h"
 
 node* make_node(Node nodetype, char *varname, Operator optype,
-		type datatype, value *val, int isptr){
+		type datatype, Class ctype, value *val, int isptr){
 	node* t = (node*)malloc(sizeof(node));
 	t->nodetype = nodetype;
 	t->optype = optype;
@@ -15,6 +16,7 @@ node* make_node(Node nodetype, char *varname, Operator optype,
 		strcpy(t->varname,varname);
 	}
 	t->datatype = datatype;
+	t->ctype = ctype;
 	t->val = val;
 	t->res_reg=-1;
 	t->ptr = NULL;
@@ -89,10 +91,11 @@ void param_args_list(node *root, param *head){
 	}
 }
 
-entry id_entry(node* idnode, type datatype, int isptr){
+entry id_entry(node* idnode, type datatype, Class c, int isptr){
 	entry e = (entry)malloc(sizeof(symtable));
 	e->varname = strdup(idnode->varname);
 	e->datatype = datatype;
+	e->ctype = c;
 	e->isptr = isptr;
 	e->size = 1;
 	e->dim1 = 0;
@@ -109,12 +112,13 @@ entry id_entry(node* idnode, type datatype, int isptr){
 #define ISNUM(node)\
 	node->nodetype == N_VAL && node->datatype == T_INTEGER
 
-entry array_entry(node *array, type datatype){
+entry array_entry(node *array, type datatype, Class c){
 	entry e = (entry)malloc(sizeof(symtable));
 	node *idnode = array->left;
 	node *dimtree = array->right;
 	e->varname = strdup(idnode->varname);
 	e->datatype = datatype;
+	e->ctype = c;
 	e->isptr = 0;
 	if(dimtree->nodetype == N_CON){
 		node *r = dimtree->left;
@@ -152,12 +156,13 @@ entry array_entry(node *array, type datatype){
 	return e;
 }
 
-entry func_entry(node *fnode, type t){
+entry func_entry(node *fnode, type t, Class c){
 	entry e = (entry)malloc(sizeof(symtable));
 	node *params = fnode->right;
 	
 	e->varname = fnode->varname;
 	e->datatype = t;
+	e->ctype = c;
 	e->isptr = 0;
 	e->size = 0;
 	e->dim1 = 0;
@@ -193,30 +198,30 @@ void installID(entry e, symtable *table){
 	prev->next = e;
 }
 
-static void installEntries(symtable *table, node *varlist, type t){
+static void installEntries(symtable *table, node *varlist, type t, Class c){
 	if(!varlist)
 		return;
 
 	switch(varlist->nodetype){
 		case N_CON:
-			installEntries(table,varlist->left,t);
-			installEntries(table,varlist->right,t);
+			installEntries(table,varlist->left,t,c);
+			installEntries(table,varlist->right,t,c);
 			break;
 
 		case N_ID:
-			installID(id_entry(varlist,t,0),table);
+			installID(id_entry(varlist,t,c,0),table);
 			break;
 
 		case N_ARR:
-			installID(array_entry(varlist,t),table);
+			installID(array_entry(varlist,t,c),table);
 			break;
 
 		case N_PTR:
-			installID(id_entry(varlist,t,1),table);
+			installID(id_entry(varlist,t,c,1),table);
 			break;
 
 		case N_FNC:
-			installID(func_entry(varlist,t),table);
+			installID(func_entry(varlist,t,c),table);
 			break;
 	}
 }
@@ -226,6 +231,7 @@ static void make_symtable(symtable *table, node *decl){
 		return;
 
 	type t;
+	Class c;
 	switch(decl->nodetype){
 		case N_CON:
 			make_symtable(table,decl->left);
@@ -234,7 +240,8 @@ static void make_symtable(symtable *table, node *decl){
 
 		case N_DEC:
 			t = decl->left->datatype;
-			installEntries(table,decl->right,t);
+			c = decl->left->ctype;
+			installEntries(table,decl->right,t,c);
 			break;
 	}
 }
@@ -246,20 +253,32 @@ void make_gst(node *decl){
 	installID(func_entry(FNC_NODE("main"),T_INTEGER),gtable);
 }
 
-void make_lst(node *decl, const char *funcname){
-	entry fentry = lookup(funcname,gtable);
+void make_lst(node *decl, const char *funcname, Class c){
 	param *p;
+	param *params;
+	symtable *table;
+
+	if(!c){
+		entry fentry = lookup(funcname,gtable);
+		params = fentry->params;
+		table = fentry->ltable;
+	}
+	else{
+		Method *M = Mlookup(funcname,c->Mlist);
+		params = M->params;
+		table = M->ltable;
+	}
+
 	int num_param=0;
-	for_each_param(p,fentry->params){
+	for_each_param(p,params){
 		num_param++;
 	}
 	set_addr(-num_param-2);
-	for_each_param(p,fentry->params){
-		installID(id_entry(ID_NODE(p->varname),p->datatype,p->isptr),
-					fentry->ltable);
+	for_each_param(p,params){
+		installID(id_entry(ID_NODE(p->varname),p->datatype,c,p->isptr),table);
 	}
 	set_addr(1);
-	make_symtable(fentry->ltable,decl);
+	make_symtable(table,decl);
 }
 
 entry lookup(char *name, symtable* table){
@@ -275,22 +294,39 @@ int get_id_addr(node *idnode){
 	return idnode->ptr->bind_addr;
 }
 
-int verify_func(type returntype, const char *funcname, node *params){
-	entry e = lookup(funcname,gtable);
-	if(!e){
-		printf("function %s not declared\n",funcname);
-		exit(1);
+int verify_func(Class c, type ret, const char *funcname, node *params){
+	param *params;
+	if(!c){
+		entry e = lookup(funcname,gtable);
+		if(!e){
+			printf("function %s not declared\n",funcname);
+			exit(1);
+		}
+		if(e->datatype != ret){
+			printf("return type mismatch\n");
+			exit(1);
+		}
+		params = e->params;
 	}
-	if(e->datatype != returntype){
-		printf("return type mismatch\n");
-		exit(1);
+	else{
+		Method *M = Mlookup(funcname,c->Mlist);
+		if(!M){
+			printf("functions %s not declared in class %s\n",
+					funcname,printClass(c));
+			exit(1);
+		}
+		if(M->ret != ret){
+			printf("return type mismatch\n");
+			exit(1);
+		}
+		params = M->plist;
 	}
 
 	param *list = (param*)malloc(sizeof(param));
 	param_args_list(params,list);
 
 	param *p,*q;
-	for(p=e->params->next,q=list->next; p!=NULL; p=p->next,q=q->next){
+	for(p=params->next,q=list->next; p!=NULL; p=p->next,q=q->next){
 		if(!q){
 			printf("function %s expects more parameters\n",funcname);
 			exit(1);

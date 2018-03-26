@@ -67,7 +67,7 @@ void get_methods(node *root, Method *head){
 			M->name = name;
 			M->ret = t;
 			M->plist = (param*)malloc(sizeof(param));
-			param_args_list(root->right,M->plist);
+			param_args_list(root->right,M->params);
 			M->next = NULL;
 
 			for(temp=head; temp->next!=NULL; temp=temp->next);
@@ -85,7 +85,7 @@ Class Clookup(const char *name){
 	return c;
 }
 
-Method* Mlookup(Method *list, const char *name){
+Method* Mlookup(const char *name, Method *list){
 	Method *M;
 	for_each_method(M,list){
 		if(strcmp(M->name,name)==0)

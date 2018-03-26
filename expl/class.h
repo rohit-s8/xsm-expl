@@ -7,7 +7,8 @@
 typedef struct ClassMethod{
 	char *name;
 	type ret;
-	param *plist;
+	param *params;
+	struct symtable *ltable;
 	struct classMethod *next;
 }Method;
 
@@ -33,7 +34,7 @@ void Cinstall(Class C);
 Class makeC(const char *name, node *members, node *methods);
 void get_methods(node *root, Method *head);
 Class Clookup(const char *name);
-Method* MLookup(Method *list, const char *name);
+Method* MLookup(const char *name, Method *list);
 void ctable_init();
 char* printClass(Class C);
 

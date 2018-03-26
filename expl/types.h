@@ -1,6 +1,8 @@
 #ifndef TYPES_H_
 #define TYPES_H_
 
+#include "class.h"
+
 typedef unsigned int	reg_ind;
 typedef unsigned int	ctr;
 
@@ -74,6 +76,7 @@ extern typetable *tt;
 //field definitions
 typedef struct field{
 	type t;
+	Class c;
 	char *name;
 	int offset;
 	struct field *next;

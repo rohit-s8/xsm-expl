@@ -2,6 +2,7 @@
 #define NODE_H_
 
 #include "types.h"
+#include "class.h"
 
 typedef union value{
 	int num;
@@ -18,6 +19,7 @@ typedef struct param{
 typedef struct symtable{
 	char *varname;
 	type datatype;
+	Class ctype;
 	int isptr;
 	unsigned int size;
 	unsigned int dim1;
@@ -42,6 +44,7 @@ typedef struct node{
 	char *varname;
 	Operator optype;
 	type datatype;
+	Class ctype;
 	value *val;
 	reg_ind res_reg;
 	entry ptr;
@@ -51,56 +54,56 @@ typedef struct node{
 
 
 node* make_node(Node nodetype, char *varname, Operator optype,
-		type datatype, value *val, int isptr);
+		type datatype, Class ctype, value *val, int isptr);
 value* make_value(int num, const char *str);
 node* make_tree(node *root, node *left, node *right);
 node* add_stmt_tree(node *main, node* _new);
 void param_args_list(node *root, param *head);
-entry id_entry(node *idnode, type t, int isptr);
-entry array_entry(node *arraynode, type t);
-entry func_entry(node *funcnode, type t);
+entry id_entry(node *idnode, type t, Class c, int isptr);
+entry array_entry(node *arraynode, type t, Class c);
+entry func_entry(node *funcnode, type t, Class c);
 void installID(entry e, symtable *table);
 entry lookup(char* name, symtable *table);
 void make_lst(node *decl, const char* funcname);
 void make_gst(node *decl);
 int get_id_addr(node *idnode);
-int verify_func(type returntype, const char *funcname, node *params);
+int verify_func(Class c, type ret, const char *funcname, node *params);
 int last_addr(symtable *table);
 
 /** Value node (number or string constant) **/
 #define VAL_NODE(datatype,val)\
-	make_node(N_VAL,NULL,NON,datatype,val,0)
+	make_node(N_VAL,NULL,NON,datatype,val,NULL,0)
 
 /** Identifier node **/
 #define ID_NODE(varname)\
-	make_node(N_ID,varname,NON,NULL,NULL,0)
+	make_node(N_ID,varname,NON,NULL,NULL,NULL,0)
 
 /** Pointer deferencing/declaration node **/
 #define PTR_NODE(varname)\
-	make_node(N_PTR,varname,NON,NULL,NULL,0)
+	make_node(N_PTR,varname,NON,NULL,NULL,NULL,0)
 
 /** Operator node **/
 #define OP_NODE(optype)\
-	make_node(N_OP,NULL,optype,NULL,NULL,0)
+	make_node(N_OP,NULL,optype,NULL,NULL,NULL,0)
 
 /** Type node **/
 #define TYPE_NODE(tname)\
-	make_node(N_TYPE,tname,NON,Tlookup(tname),NULL,0)
+	make_node(N_TYPE,tname,NON,Tlookup(tname),Clookup(tname),NULL,0)
 
 /** parameter node **/
 #define PARAM_NODE(datatype,paramname,isptr)\
-	make_node(N_PARAM,paramname,NON,datatype,NULL,isptr)
+	make_node(N_PARAM,paramname,NON,datatype,NULL,NULL,isptr)
 
 /* function call node */
 #define FNC_NODE(funcname)\
-	make_node(N_FNC,funcname,NON,NULL,NULL,0)
+	make_node(N_FNC,funcname,NON,NULL,NULL,NULL,0)
 
 /* function defintion node */
 #define FND_NODE(funcname)\
-	make_node(N_FND,funcname,NON,NULL,NULL,0)
+	make_node(N_FND,funcname,NON,NULL,NULL,NULL,0)
 
 #define makenode(nodetype)\
-	make_node(nodetype,NULL,NON,NULL,NULL,0)
+	make_node(nodetype,NULL,NON,NULL,NULL,NULL,0)
 /** Connector node **/
 #define CON_NODE()\
 	makenode(N_CON)

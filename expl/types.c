@@ -1,6 +1,7 @@
 #include<stdlib.h>
 #include "types.h"
 #include "node.h"
+#include "class.h"
 
 typetable *tt;
 int off;
@@ -109,12 +110,13 @@ void get_fields(node *ftree, field *head){
 		return;
 
 	if(get_offset()==8){
-		printf("user defined type can have maximum 8 fields\n");
+		printf("maximum 8 fields allowed\n");
 		return;
 	}
 
 	field *f,*temp;
 	type t;
+	Class c;
 	char *tname;
 	switch(ftree->nodetype){
 		case N_CON:
@@ -124,13 +126,15 @@ void get_fields(node *ftree, field *head){
 		case N_DEC:
 			tname = ftree->left->varname;
 			t = Tlookup(tname);
-			if(!t){
-				printf("type %s not defined\n",tname);
+			c = Clookup(tname);
+			if(!t && !c){
+				printf("type/class %s not defined\n",tname);
 				exit(1);
 			}
 
 			f = (field*)malloc(sizeof(field));
 			f->t = t;
+			f->c = c;
 			f->name = ftree->right->varname;
 			f->offset = get_offset();
 			update_off();

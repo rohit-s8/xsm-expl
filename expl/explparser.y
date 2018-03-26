@@ -24,13 +24,15 @@ ctr errors=0;
 extern ctr line_ctr;
 ctr infunc=0;
 ctr indec=0;
+ctr inclass=0;
+char *cname;
 char *funcname;	//available when grammar reduced to Fheader
 %}
 
 
 %token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
 %token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
-%token ADR MOD TYPE INIT ALLOC FREE TNULL
+%token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS
 
 %right ASSIGN
 %left RELOP
@@ -42,7 +44,7 @@ char *funcname;	//available when grammar reduced to Fheader
 
 %start program
 %%
-program: Typedefs Declarations Fdefblock Main
+program: Typedefs Classes Declarations Fdefblock Main
 	{
 	$$ = CON_NODE();
 	$$ = make_tree($$,$3,$4);
@@ -94,30 +96,53 @@ field: Type ID';'
 	}
 ;
 
+Classes: Classes Class	{$$ = make_tree(CON_NODE(),$1,$2);}
+	   | Class	{$$ = $1;}
+		| Nothing
+;
+
+Class: CLASS ID {inclass=1; cname = $2->varname;}
+	 '{' DECL Fields MethodDecs ENDDEC';' 
+	{
+		Cinstall(makeC(cname,$6,$7));
+	}
+		Fdefblock '}'
+	{
+		inclass=0;
+		$$ = $10;
+		$$->ctype = Clookup(cname);
+	}
+;
+
+MethodDecs: MethodDecs MethodDec	{$$ = make_tree(CON_NODE(),$1,$2);}
+		  | MethodDec	{$$=$1;}
+;
+
+MethodDec: Type Funcdec		{$$ = make_tree($2,$1,$2->right);}
+		 ;
+
 Declarations: DECL {indec=1;} Declist ENDDEC';'
 			{
-				if(infunc){
-					make_lst($3,funcname);
-/*
-					entry f = lookup(funcname,gtable);
-					printf("%s\n",funcname);
-					print_symtable(f->ltable);
-					printf("\n");
-*/
+				if(infunc && inclass){
+					Class c = Clookup(cname);
+					make_lst($3,funcname,c);
+				}
+				else if(incfunc){
+					make_lst($3,funcname,NULL);
 				}
 				else{
 					make_gst($3);
-/*
-					print_symtable(gtable);
-					printf("\n");
-*/
 				}
 				indec=0;
 			}
 			| DECL ENDDEC';'
 			{
-				if(infunc){
-					make_lst(NULL,funcname);
+				if(infunc && inclass){
+					Class c = Clookup(cname);
+					make_lst(NULL,funcname,c);
+				}
+				else if(infunc){
+					make_lst(NULL,funcname,NULL);
 				}
 				else{
 					make_gst(NULL);
@@ -217,21 +242,30 @@ Fdefblock: Fdefblock Fdef
 Fdef: Fheader Fblock		
     {
 	$$ = $2;
-	$$->ptr = lookup(funcname,gtable);
+	if(inclass)
+		$$->ctype = Clookup(cname);
+	else
+		$$->ptr = lookup(funcname,gtable);
 	infunc = 0;
 	}
     ;
 
 Fheader: Type ID '('params')'	
        {
-		verify_func($1->datatype,$2->varname,$4);
+		Class c = NULL;
+		if(inclass)
+			c = Clookup(cname);
+		verify_func(c,$1->datatype,$2->varname,$4);
 		infunc = 1;
 		indec = 0;
 		funcname = $2->varname;
 	}
 	| Type ID '('')'
 	{
-		verify_func($1->datatype,$2->varname,NULL);
+		Class c = NULL;
+		if(inclass)
+			c = Clookup(cname);
+		verify_func(c,$1->datatype,$2->varname,NULL);
 		infunc=1;
 		indec=0;
 		funcname = $2->varname;
