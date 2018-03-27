@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "types.h"
-#include "y.tab.h"
 #include "node.h"
+#include "types.h"
+#include "class.h"
+#include "y.tab.h"
 
 /** print instruction **/
 #define printi(...)\
@@ -140,7 +141,7 @@
 /** Set IF label domain and put declaration **/
 #define IF_INIT IF_DOM = ++if_ctr; LABEL_DEC("IF",IF_DOM)
 /** IF label exit **/
-#define IF_EXIT LABEL_DEC("ENDIF",IF_DOM)
+#define IF_EXIT LABEL_DEC("ENDIF",IF_DOM); --IF_DOM
 /** JZ ELSE, JZ ENDIF, JMP ENDIF **/
 #define JZ_ELSE(reg)\
 	LABEL_JZ("ELSE",IF_DOM,reg)
@@ -372,6 +373,10 @@ void codegen(node *root){
 	reg_ind cond;
 	node *temp;
 	int addr;
+	char fname[100];
+	symtable *table;
+	Class c;
+	type t;
 
 	if(root==NULL)
 		return;
@@ -390,6 +395,15 @@ void codegen(node *root){
 				MOV_RS(next,root->val->str);
 			break;
 
+		case N_SELF:
+				next = reglink(root);
+				MOV_RBP(next);
+				reg_ind offset = get_reg();
+				MOV_RN(offset,3);
+				SUB(next,offset);
+				free_reg();
+				MOVA_RA(next,next);
+				break;
 		case N_PTR:
 		case N_ID:
 			if(!root->left){
@@ -417,8 +431,12 @@ void codegen(node *root){
 			else{
 				codegen(root->left);
 				type t = root->left->datatype;
+				Class c = root->left->ctype;
 				field *f;
-				f = Flookup(t->flist,root->varname);
+				if(!c)
+					f = Flookup(t->flist,root->varname);
+				else
+					f = Flookup(c->mlist,root->varname);
 				next = get_reg();
 				MOV_RN(next,f->offset);
 				ADD(root->left->res_reg,next);
@@ -548,10 +566,10 @@ void codegen(node *root){
 			codegen(root->right);
 			reg_ind res = root->right->res_reg;
 			next = get_reg();
-			reg_ind temp = get_reg();
+			reg_ind r = get_reg();
 			MOV_RBP(next);
-			MOV_RN(temp,-2);
-			ADD(next,temp);
+			MOV_RN(r,-2);
+			ADD(next,r);
 			MOVA_AR(next,res);
 			free_reg();
 			free_reg();
@@ -566,10 +584,21 @@ void codegen(node *root){
 			reg_unlink(root->left);
 			break;
 		case N_FND:
-			LABEL_DEC(root->varname,0);
+			c = root->ctype;
+			if(!c){
+				strcpy(fname,root->varname);
+				table = root->ptr->ltable;
+			}
+			else{
+				strcpy(fname,root->ctype->name);
+				strcat(fname,root->varname);
+				Method *M = Mlookup(root->varname,c->Mlist);
+				table = M->ltable;
+			}
+			LABEL_DEC(fname,0);
 			printi("PUSH BP\n");
 			MOV("BP","SP");
-			printi("MOV SP,%d\n",last_addr(root->ptr->ltable));
+			printi("MOV SP,%d\n",last_addr(table));
 			printi("ADD SP,BP\n");
 			codegen(root->left);
 			codegen(root->right);
@@ -578,15 +607,40 @@ void codegen(node *root){
 			save_registers(num_reg());	//save registers in use
 			next = reglink(root);		//return value
 			codegen(root->right);		//push arguments
-			PUSH(next);
+			reg_ind objaddr;
+			param *params;
+
+			if(root->left){
+				codegen(root->left);
+				c = root->left->ctype;
+				objaddr = root->left->res_reg;
+			}
+			if(c){
+				strcpy(fname,c->name);
+				strcat(fname,root->varname);
+				Method *M = Mlookup(root->varname,c->Mlist);
+				params = M->params;
+				PUSH(objaddr);				//object address
+				reg_unlink(root->left);
+			}
+			else{
+				strcpy(fname,root->varname);
+				params = root->ptr->params;
+			}
+			PUSH(next);					// return value
 			save_regstate();			//saving number of registers in use
 			free_all_reg();
-			LABEL_CALL(root->varname,0);	//function call
+			LABEL_CALL(fname,0);		//function call
 			restore_regstate();			//restore register state
 			POP(next);					//get return value
+			if(c){						//POP object address
+				next = get_reg();
+				POP(next);
+				free_reg();
+			}
 			int num_param=0;
 			param *p;
-			for_each_param(p,root->ptr->params){
+			for_each_param(p,params){
 				num_param++;
 			}
 			next = get_reg();
@@ -635,7 +689,9 @@ int main(int argc, char *argv[]){
 	yyset_in(in_file);
 	free_all_reg();
 	reset_counters();
+
 	ttable_init();
+	ctable_init();
 	yyparse();
 	fclose(in_file);
 	fclose(ob_file);

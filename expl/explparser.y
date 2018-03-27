@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "node.h"
 #include "types.h"
+#include "class.h"
 #define YYSTYPE	node* 
 
 int yylex();
@@ -11,12 +12,12 @@ void codegen(node*);
 void put_header();
 void terminate();
 int bindID(node*);
-int verify_field(type,node*);
+int verify_field(type,Class,node*);
 int bindPTR(node*);
 int bindArray(node*);
 int bindFunc(node*);
 void verify_args(param*,node*);
-int translateAST(node*);
+int translateAST(node*,node*,node*);
 YYSTYPE temp;
 YYSTYPE _if;
 YYSTYPE _while;
@@ -25,6 +26,7 @@ extern ctr line_ctr;
 ctr infunc=0;
 ctr indec=0;
 ctr inclass=0;
+Class c;
 char *cname;
 char *funcname;	//available when grammar reduced to Fheader
 %}
@@ -32,7 +34,7 @@ char *funcname;	//available when grammar reduced to Fheader
 
 %token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
 %token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
-%token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS
+%token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS DEF END SELF
 
 %right ASSIGN
 %left RELOP
@@ -44,26 +46,20 @@ char *funcname;	//available when grammar reduced to Fheader
 
 %start program
 %%
-program: Typedefs Classes Declarations Fdefblock Main
+program: Typedefs Classdefs Declarations Fdefblock Main
 	{
-	$$ = CON_NODE();
-	$$ = make_tree($$,$3,$4);
-	return translateAST($$);
+	return translateAST($2,$4,$5);
 	}
 
-	| Typedefs Declarations Main
+	| Typedefs Classdefs Declarations Main
 	{
-		$$ = $3;
-		return translateAST($$);
+		return translateAST($2,NULL,$4);
 	}
 
        ;
 
-Nothing:	{$$=NULL;}
-	   ;
-
-Typedefs: Typelist		{ttable_update($1);}
-		| Nothing
+Typedefs: DEF Typelist END	{$$=$2; ttable_update($2);}
+		| DEF END	{$$=NULL;}
 ;
 
 Typelist: Typelist Typedef
@@ -96,21 +92,24 @@ field: Type ID';'
 	}
 ;
 
+Classdefs: DEF Classes END	{$$=$2;}
+		 | DEF END		{$$=NULL;}
+
 Classes: Classes Class	{$$ = make_tree(CON_NODE(),$1,$2);}
 	   | Class	{$$ = $1;}
-		| Nothing
 ;
 
 Class: CLASS ID {inclass=1; cname = $2->varname;}
-	 '{' DECL Fields MethodDecs ENDDEC';' 
+	 '{' DECL Fields MethodDecs ENDDEC 
 	{
 		Cinstall(makeC(cname,$6,$7));
+		c = Clookup(cname);
 	}
 		Fdefblock '}'
 	{
 		inclass=0;
+		c = NULL;
 		$$ = $10;
-		$$->ctype = Clookup(cname);
 	}
 ;
 
@@ -118,16 +117,15 @@ MethodDecs: MethodDecs MethodDec	{$$ = make_tree(CON_NODE(),$1,$2);}
 		  | MethodDec	{$$=$1;}
 ;
 
-MethodDec: Type Funcdec		{$$ = make_tree($2,$1,$2->right);}
+MethodDec: Type Funcdec';'		{$$ = make_tree($2,$1,$2->right);}
 		 ;
 
-Declarations: DECL {indec=1;} Declist ENDDEC';'
+Declarations: DECL {indec=1;} Declist ENDDEC
 			{
 				if(infunc && inclass){
-					Class c = Clookup(cname);
 					make_lst($3,funcname,c);
 				}
-				else if(incfunc){
+				else if(infunc){
 					make_lst($3,funcname,NULL);
 				}
 				else{
@@ -135,10 +133,9 @@ Declarations: DECL {indec=1;} Declist ENDDEC';'
 				}
 				indec=0;
 			}
-			| DECL ENDDEC';'
+			| DECL ENDDEC
 			{
 				if(infunc && inclass){
-					Class c = Clookup(cname);
 					make_lst(NULL,funcname,c);
 				}
 				else if(infunc){
@@ -229,6 +226,10 @@ Funcdec: ID'('params')'
 			$$ = FNC_NODE($1->varname);
 			$$ = make_tree($$,NULL,$3);
 		}
+		| ID'('')'
+		{
+			$$ = FNC_NODE($1->varname);
+		}
 ;
 
 Fdefblock: Fdefblock Fdef
@@ -243,7 +244,7 @@ Fdef: Fheader Fblock
     {
 	$$ = $2;
 	if(inclass)
-		$$->ctype = Clookup(cname);
+		$$->ctype = c; 
 	else
 		$$->ptr = lookup(funcname,gtable);
 	infunc = 0;
@@ -252,9 +253,6 @@ Fdef: Fheader Fblock
 
 Fheader: Type ID '('params')'	
        {
-		Class c = NULL;
-		if(inclass)
-			c = Clookup(cname);
 		verify_func(c,$1->datatype,$2->varname,$4);
 		infunc = 1;
 		indec = 0;
@@ -262,9 +260,6 @@ Fheader: Type ID '('params')'
 	}
 	| Type ID '('')'
 	{
-		Class c = NULL;
-		if(inclass)
-			c = Clookup(cname);
 		verify_func(c,$1->datatype,$2->varname,NULL);
 		infunc=1;
 		indec=0;
@@ -316,7 +311,7 @@ stmt: READ'('variable')'';'	{$$ = make_tree($1,$3,NULL);}
 	{
 		bindID($3);
 		if(basic_type($3->datatype))
-			yyerror("cannot free in built type");
+			yyerror("cannot free in-built type");
 		temp = OP_NODE(O_EQ);
 		temp = make_tree(temp,$3,NULL_NODE());
 		$$ = make_tree($1,$3,temp);
@@ -332,8 +327,16 @@ stmt: READ'('variable')'';'	{$$ = make_tree($1,$3,NULL);}
 
 retstmt: RET expr';'
 {
-	entry fentry = lookup(funcname,gtable);
-	if($2->datatype != fentry->datatype){
+	type t;
+	if(!inclass){
+		entry fentry = lookup(funcname,gtable);
+		t = fentry->datatype;
+	}
+	else{
+		Method *M = Mlookup(funcname,c->Mlist);
+		t = M->ret;
+	}
+	if($2->datatype != t){
 		printf("return type mismatch\n");
 		exit(1);
 	}
@@ -363,12 +366,18 @@ assign: variable ASSIGN expr';'
 	}
 	| FAccess ASSIGN expr';'
 	{
-		if($3->datatype == T_VOID)
+		if($3->datatype == T_VOID){
 			$3->datatype = $1->datatype;
-		if($1->datatype != $3->datatype){
+			$3->ctype = $1->ctype;
+		}
+		if(($1->datatype!=$3->datatype)){
 			yyerror("assignment error.");
-			printf("%s is of %s datatype\n",$1->varname,
-				printtype($1->datatype));
+			char *type;
+			if(!$1->ctype)
+				type = printtype($1->datatype);
+			else
+				type = printClass($1->ctype);
+			printf("%s is of %s type\n",$1->varname,type);
 		}
 		$$ = make_tree($2,$1,$3);
 	}
@@ -521,6 +530,7 @@ expr: expr PLUS expr
 	$$ = make_tree(FNC_NODE($1->varname),NULL,NULL);
 	bindFunc($$);
 }
+| MethodCall	{$$ = $1;}
 | ADR variable
 {
 	$$ = make_tree($1,NULL,$2);
@@ -546,7 +556,11 @@ Arg: expr
 
 FAccess: FAccess'.'ID
 		{
-			if(!verify_field($1->datatype,$3)){
+			if($1->ctype){
+				printf("error:%d:invlaid access of class member\n",line_ctr);
+				++errors;
+			}
+			else if(!verify_field($1->datatype,NULL,$3)){
 				yyerror("field access error");
 				printf("field %s not defined for type %s\n",
 						$3->varname,printtype($1->datatype));
@@ -556,30 +570,117 @@ FAccess: FAccess'.'ID
 	   | ID'.'ID
 		{
 			bindID($1);
-			if(!verify_field($1->datatype,$3)){
+			if($1->ctype){
+				printf("error:%d:invalid access of class members\n",line_ctr);
+				++errors;
+			}
+			else if(!verify_field($1->datatype,NULL,$3)){
 				yyerror("field access error");
 				printf("field %s not defined for type %s\n",
 						$3->varname,printtype($1->datatype));
 			}
 			$$ = make_tree($3,$1,NULL);
 		}
+		| SELF'.'ID
+		{
+			char *fname = $3->varname;
+			field m;
+			if(!inclass){
+				printf("error:%d:cannot resolve \'self\' outside a class\n",
+							line_ctr);
+				++errors;
+			}
+			if(!verify_field(NULL,c,$3)){
+				printf("error:%d:%s not a member of %s class\n",
+						line_ctr,fname,c->name);
+				++errors;
+			}
+			$1->ctype = c;
+			$$ = make_tree($3,$1,NULL);
+		}
+;
+
+MethodCall: ID'.'ID'('Arglist')'
+		  {
+			bindID($1);
+			if(!$1->ctype){
+				printf("error:%d:%s is not a class\n",line_ctr,$1->varname);
+				++errors;
+			}
+				$$ = make_tree(FNC_NODE($3->varname),$1,$5);
+				bindFunc($$);
+		}
+		  | ID'.'ID'('')'
+		{
+			bindID($1);
+			if(!$1->ctype){
+				printf("error:%d:%s is not a class\n",line_ctr,$1->varname);
+				++errors;
+			}
+				$$ = make_tree(FNC_NODE($3->varname),$1,NULL);
+				bindFunc($$);
+		}
+		|	SELF'.'ID'('Arglist')'
+		{
+			if(!inclass){
+				printf("error:%d:cannot resolve \'self\' outside a class\n",
+							line_ctr);
+				++errors;
+			}
+				$1->ctype = c;
+				$$ = make_tree(FNC_NODE($3->varname),$1,$5);
+				bindFunc($$);
+		}
+		|	SELF'.'ID'('')'
+		{
+			if(!inclass){
+				printf("error:%d:cannot resolve \'self\' outside a class\n",
+							line_ctr);
+				++errors;
+			}
+				$1->ctype = c;
+				$$ = make_tree(FNC_NODE($3->varname),$1,NULL);
+				bindFunc($$);
+		}
 ;
 			
 %%
 
-int verify_field(type t, node *idnode){
+int verify_field(type t, Class c, node *idnode){
+	field *list;
 	field *f;
-	f = Flookup(t->flist,idnode->varname);
+
+	if(c)
+		list = c->mlist;
+	else
+		list = t->flist;
+	f = Flookup(list,idnode->varname);
 	if(!f)
 		return 0;
 	idnode->datatype = f->t;
+	idnode->ctype = f->c;
 	return 1;
 }
 
 int bindID(node *idnode){
-	entry fentry = lookup(funcname,gtable);
-	idnode->ptr = lookup(idnode->varname,fentry->ltable);
-	if(!idnode->ptr)
+	symtable *table;
+
+	if(inclass){
+		Method *M = Mlookup(funcname,c->Mlist);
+		table = M->ltable;
+	}
+	else{	
+		entry fentry = lookup(funcname,gtable);
+		table = fentry->ltable;
+	}
+
+	idnode->ptr = lookup(idnode->varname,table);
+	if(!idnode->ptr && inclass){
+		printf("error:%d:variable %s not declared\n",line_ctr,idnode->varname);
+		++errors;
+		return 0;
+	}
+	else if(!idnode->ptr)
 		idnode->ptr = lookup(idnode->varname,gtable);
 	if(!idnode->ptr){
 		yyerror("binding error.");
@@ -587,6 +688,7 @@ int bindID(node *idnode){
 		return 0;
 	}
 	idnode->datatype = idnode->ptr->datatype;
+	idnode->ctype = idnode->ptr->ctype;
 	idnode->isptr = idnode->ptr->isptr;
 	return 1;
 }
@@ -617,17 +719,7 @@ int bindArray(node *array){
 
 	if(!bindID(idnode))
 		return 0;
-/*
-	entry fentry = lookup(funcname,gtable);
-	idnode->ptr = lookup(idnode->varname,fentry->ltable);
-	if(!idnode->ptr)
-		idnode->ptr = lookup(idnode->varname,gtable);
-	if(!idnode->ptr){
-		yyerror("variable ");
-		printf("%s not declared\n",idnode->varname);
-		return 0;
-	}
-*/
+
 	if(!idnode->ptr->dim1 && !idnode->isptr){
 		yyerror("variable ");
 		printf("%s not declared as array\n",idnode->varname);
@@ -664,15 +756,32 @@ int bindArray(node *array){
 
 int bindFunc(node *funcnode){
 	node *arglist = funcnode->right;
+	node *class = funcnode->left;
+	param *params;
+	type ret;
 
-	funcnode->ptr = lookup(funcnode->varname,gtable);
-	if(!funcnode->ptr){
-		printf("function %s not declared\n",funcnode->varname);
-		return 0;
+	if(!class){
+		funcnode->ptr = lookup(funcnode->varname,gtable);
+		if(!funcnode->ptr){
+			printf("function %s not declared\n",funcnode->varname);
+			return 0;
+		}
+		params = funcnode->ptr->params;
+		ret = funcnode->ptr->datatype;
 	}
-
-	verify_args(funcnode->ptr->params,arglist);
-	funcnode->datatype = funcnode->ptr->datatype;
+	else{
+		Method *M = Mlookup(funcnode->varname,class->ctype->Mlist);
+		if(!M){
+			printf("error:%d:%s not declared in class %s\n",
+					line_ctr,funcnode->varname,class->ctype->name);
+			++errors;
+			return 0;
+		}
+		params = M->params;
+		ret = M->ret;
+	}
+	verify_args(params,arglist);
+	funcnode->datatype = ret;
 	return 1;
 }
 
@@ -708,10 +817,12 @@ void verify_args(param *list, node *args){
 
 
 
-int translateAST(node *pr){
+int translateAST(node *classdefs, node *fdefs, node *main){
 	if(!errors){
 		put_header();
-		codegen(pr);
+		codegen(classdefs);
+		codegen(fdefs);
+		codegen(main);
 		terminate();
 	}
 	else{

@@ -250,7 +250,7 @@ void make_gst(node *decl){
 	gtable = (symtable*)malloc(sizeof(symtable));
 	set_addr(4096);
 	make_symtable(gtable,decl);
-	installID(func_entry(FNC_NODE("main"),T_INTEGER),gtable);
+	installID(func_entry(FNC_NODE("main"),T_INTEGER,NULL),gtable);
 }
 
 void make_lst(node *decl, const char *funcname, Class c){
@@ -273,9 +273,13 @@ void make_lst(node *decl, const char *funcname, Class c){
 	for_each_param(p,params){
 		num_param++;
 	}
-	set_addr(-num_param-2);
+	if(!c)
+		set_addr(-num_param-2);
+	else
+		set_addr(-num_param-3);
 	for_each_param(p,params){
-		installID(id_entry(ID_NODE(p->varname),p->datatype,c,p->isptr),table);
+		installID(id_entry(ID_NODE(p->varname),p->datatype,NULL,p->isptr),
+					table);
 	}
 	set_addr(1);
 	make_symtable(table,decl);
@@ -295,7 +299,7 @@ int get_id_addr(node *idnode){
 }
 
 int verify_func(Class c, type ret, const char *funcname, node *params){
-	param *params;
+	param *paramlist;
 	if(!c){
 		entry e = lookup(funcname,gtable);
 		if(!e){
@@ -306,7 +310,7 @@ int verify_func(Class c, type ret, const char *funcname, node *params){
 			printf("return type mismatch\n");
 			exit(1);
 		}
-		params = e->params;
+		paramlist = e->params;
 	}
 	else{
 		Method *M = Mlookup(funcname,c->Mlist);
@@ -319,14 +323,14 @@ int verify_func(Class c, type ret, const char *funcname, node *params){
 			printf("return type mismatch\n");
 			exit(1);
 		}
-		params = M->plist;
+		paramlist = M->params;
 	}
 
 	param *list = (param*)malloc(sizeof(param));
 	param_args_list(params,list);
 
 	param *p,*q;
-	for(p=params->next,q=list->next; p!=NULL; p=p->next,q=q->next){
+	for(p=paramlist->next,q=list->next; p!=NULL; p=p->next,q=q->next){
 		if(!q){
 			printf("function %s expects more parameters\n",funcname);
 			exit(1);

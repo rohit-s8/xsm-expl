@@ -1,6 +1,7 @@
 %{
 #include "y.tab.h"
 #include "node.h"
+#include "types.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -10,11 +11,19 @@ ctr line_ctr=1;
 %option noyywrap
 number	[0-9]+
 string [\"][^\"]*[\"]
-id	[A-Za-z]+[0-9]*
+id	[a-zA-Z][a-zA-Z0-9_]*
 
 %%
 
 "type"		{return TYPE;}
+
+"def"		{return DEF;}
+
+"end"		{return END;}
+
+"class"		{return CLASS;}
+
+"self"		{yylval = SELF_NODE(); return SELF;}
 
 "decl"		{return DECL;}
 

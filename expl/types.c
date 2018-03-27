@@ -6,7 +6,7 @@
 typetable *tt;
 int off;
 
-static void reset_off(){
+void reset_off(){
 	off=0;
 }
 

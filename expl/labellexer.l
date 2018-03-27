@@ -10,7 +10,7 @@ ctr inst_ctr;
 %}
 
 %option noyywrap
-label	"L_"[a-zA-Z]+[0-9]*	
+label	"L_"[a-zA-Z][a-zA-Z0-9_]*	
 
 %%
 

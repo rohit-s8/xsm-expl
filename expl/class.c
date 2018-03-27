@@ -6,9 +6,11 @@
 
 ClassTable *Ctable;
 void reset_off();
+int Mcount;
 
 void Cinstall(Class C){
 	Class c,p;
+	p = Ctable;
 	for_each_class(c){
 		if(strcmp(c->name,C->name)==0){
 			printf("Class %s already defined\n",C->name);
@@ -21,6 +23,7 @@ void Cinstall(Class C){
 
 Class makeC(const char *name, node *members, node *methods){
 	Class c;
+	void reset_off();
 
 	if(Tlookup(name)!=NULL){
 		printf("Type %s already defined\n",name);
@@ -33,6 +36,7 @@ Class makeC(const char *name, node *members, node *methods){
 	reset_off();
 	get_fields(members,c->mlist);
 	c->Mlist = (Method*)malloc(sizeof(Method));
+	Mcount=0;
 	get_methods(methods,c->Mlist);
 	c->par = NULL;
 	c->next = NULL;
@@ -43,17 +47,24 @@ void get_methods(node *root, Method *head){
 	if(!root)
 		return;
 
+	if(Mcount>=8){
+		printf("Too many functions in class. Max 8 allowed\n");
+		exit(1);
+	}
+
 	char *name;
 	type t;
 	Method *M,*temp;
+	Method *Mlookup(const char*, Method*);
 	switch(root->nodetype){
 		case N_CON:
-			get_methods(root->left);
-			get_methods(root->right);
+			get_methods(root->left,head);
+			get_methods(root->right,head);
 			break;
 		case N_FNC:
 			name = root->varname;
-			if(Mlookup(name,head)!=NULL){
+			M = Mlookup(name,head);
+			if(M!=NULL){
 				printf("function %s already declared in class\n",name);
 				exit(1);
 			}
@@ -66,12 +77,14 @@ void get_methods(node *root, Method *head){
 			M = (Method*)malloc(sizeof(Method));
 			M->name = name;
 			M->ret = t;
-			M->plist = (param*)malloc(sizeof(param));
+			M->params = (param*)malloc(sizeof(param));
 			param_args_list(root->right,M->params);
+			M->ltable = (symtable*)malloc(sizeof(symtable));
 			M->next = NULL;
 
 			for(temp=head; temp->next!=NULL; temp=temp->next);
 			temp->next = M;
+			++Mcount;
 			break;
 	}
 }
@@ -94,7 +107,7 @@ Method* Mlookup(const char *name, Method *list){
 	return M;
 }
 
-void Ctable_init(){
+void ctable_init(){
 	Ctable = (Class)malloc(sizeof(ClassTable));
 }
 

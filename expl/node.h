@@ -1,58 +1,14 @@
 #ifndef NODE_H_
 #define NODE_H_
 
-#include "types.h"
-#include "class.h"
+#include "structs.h"
 
-typedef union value{
-	int num;
-	char *str;
-}value;
-
-typedef struct param{
-	type datatype;
-	char *varname;
-	int isptr;
-	struct param *next;
-}param;
-
-typedef struct symtable{
-	char *varname;
-	type datatype;
-	Class ctype;
-	int isptr;
-	unsigned int size;
-	unsigned int dim1;
-	unsigned int dim2;
-	int bind_addr;
-	int isGlobal;
-	param *params;
-	struct symtable *ltable;
-	struct symtable *next;
-}symtable;
-
-typedef symtable* entry;
-extern symtable *gtable;
 #define for_each_entry(e,table)\
 	for(e=table->next;e!=NULL;e=e->next)
 #define for_each_param(p,plist)\
 	for(p=plist->next;p!=NULL;p=p->next)
 
-//node definition
-typedef struct node{
-	Node nodetype;
-	char *varname;
-	Operator optype;
-	type datatype;
-	Class ctype;
-	value *val;
-	reg_ind res_reg;
-	entry ptr;
-	int isptr;
-	struct node *left,*right,*par;
-}node;
-
-
+extern symtable *gtable;
 node* make_node(Node nodetype, char *varname, Operator optype,
 		type datatype, Class ctype, value *val, int isptr);
 value* make_value(int num, const char *str);
@@ -64,7 +20,7 @@ entry array_entry(node *arraynode, type t, Class c);
 entry func_entry(node *funcnode, type t, Class c);
 void installID(entry e, symtable *table);
 entry lookup(char* name, symtable *table);
-void make_lst(node *decl, const char* funcname);
+void make_lst(node *decl, const char* funcname, Class c);
 void make_gst(node *decl);
 int get_id_addr(node *idnode);
 int verify_func(Class c, type ret, const char *funcname, node *params);
@@ -72,7 +28,7 @@ int last_addr(symtable *table);
 
 /** Value node (number or string constant) **/
 #define VAL_NODE(datatype,val)\
-	make_node(N_VAL,NULL,NON,datatype,val,NULL,0)
+	make_node(N_VAL,NULL,NON,datatype,NULL,val,0)
 
 /** Identifier node **/
 #define ID_NODE(varname)\
@@ -167,6 +123,10 @@ int last_addr(symtable *table);
 /** NULL node **/
 #define NULL_NODE()\
 	makenode(N_NULL)
+
+/** SELF node **/
+#define SELF_NODE()\
+	makenode(N_SELF)
 
 /** make integer or string values **/
 #define VAL_NUM(N)\
