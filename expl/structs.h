@@ -33,7 +33,8 @@ typedef enum Node{
 	N_ALOC,
 	N_FREE,
 	N_NULL,
-	N_SELF
+	N_SELF,
+	N_NEW
 }Node;
 
 //operator types
@@ -56,9 +57,12 @@ typedef enum Operator{
 	O_NOT
 }Operator;
 
-//type table definitions
-
+// struct declarations
 struct field;
+struct ClassTable;
+struct symtable;
+
+//type table definitions
 typedef struct typetable{
 	char *name;
 	unsigned int size;
@@ -68,7 +72,6 @@ typedef struct typetable{
 typedef typetable* type;	//pointer to type table entry
 
 //field definitions
-struct ClassTable;
 typedef struct field{
 	type t;
 	struct ClassTable *c;
@@ -86,10 +89,13 @@ typedef struct param{
 }param;
 
 // Class Methods
-struct symtable;
 typedef struct ClassMethod{
 	char *name;
 	type ret;
+	struct ClassTable *c;
+	int isdef;
+	int label;
+	ctr index;
 	param *params;
 	struct symtable *ltable;
 	struct classMethod *next;
@@ -100,6 +106,7 @@ typedef struct ClassTable{
 	char *name;
 	field *mlist;
 	Method *Mlist;
+	ctr index;
 	struct ClassTable *par;
 	struct ClassTable *next;
 }ClassTable;
@@ -122,6 +129,8 @@ typedef struct symtable{
 	unsigned int dim2;
 	int bind_addr;
 	int isGlobal;
+	int isdef;
+	ctr label;
 	param *params;
 	struct symtable *ltable;
 	struct symtable *next;

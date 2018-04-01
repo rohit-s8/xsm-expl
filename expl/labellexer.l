@@ -3,10 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pair.h"
-#include "types.h"
+#include "structs.h"
 
 void put_address(char*,int);
 ctr inst_ctr;
+int pass;
+int errors;
 %}
 
 %option noyywrap
@@ -20,7 +22,7 @@ label	"L_"[a-zA-Z][a-zA-Z0-9_]*
 
 [\n]		{ECHO; if(inst_ctr<2056)inst_ctr++; else inst_ctr+=2;}
 
-.		{ECHO;}
+.			{ECHO;}
 
 %%
 
@@ -38,7 +40,12 @@ void put_address(char* yytext, int yyleng){
 			break;
 		}
 	}
-	if(!p)
+	if(!p && pass && head){
+		printf("cannot resolve label %s\n",label_val);
+		errors++;
+		ECHO;
+	}
+	else if(!p)
 		ECHO;
 }
 
@@ -52,17 +59,29 @@ int main(int argc, char *argv[]){
 	inst_ctr=2048;
 	yyin = in;
 	yyout = temp;
+	pass=0;
+	errors=0;
 	yylex();
 	fclose(in);
 	fclose(temp);
-	printf("Code size: %d words\n", inst_ctr-2048);
 
 	exefilename = exefile(argv[1]);
 	yyin = fopen(".temp","r");
 	yyout = fopen(exefilename,"w");
+	++pass;
+	inst_ctr=2048;
 	yylex();
 	fclose(yyin);
 	fclose(yyout);
 
+	if(errors>0){
+		printf("label translation failed\n");
+		char cmd[20];
+		sprintf(cmd,"rm -f %s",exefilename);
+		system(cmd);
+	}
+	else
+		printf("Code size: %d words\n", inst_ctr-2048);
+	system("rm -f .temp");
 	return 0;
 }

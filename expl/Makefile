@@ -2,7 +2,7 @@ CC = gcc
 CFLAG = -c -w -g
 LEX = flex
 YACC = yacc -d
-VER = 7
+VER = 8
 
 all: expl$(VER) linker
 

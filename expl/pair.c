@@ -3,7 +3,7 @@
 #include "pair.h"
 #include "types.h"
 
-pair_list head;
+pair_list head=NULL;
 
 pair* make_pair(const char* str,int buf_len, ctr num){
 	pair* p = (pair*)malloc(sizeof(pair));

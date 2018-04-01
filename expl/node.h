@@ -23,7 +23,8 @@ entry lookup(char* name, symtable *table);
 void make_lst(node *decl, const char* funcname, Class c);
 void make_gst(node *decl);
 int get_id_addr(node *idnode);
-int verify_func(Class c, type ret, const char *funcname, node *params);
+int verify_func(Class c, type ret, const char *funcname, node *params,
+				int Override);
 int last_addr(symtable *table);
 
 /** Value node (number or string constant) **/
@@ -127,6 +128,10 @@ int last_addr(symtable *table);
 /** SELF node **/
 #define SELF_NODE()\
 	makenode(N_SELF)
+
+/** NEW node **/
+#define NEW_NODE()\
+	makenode(N_NEW)
 
 /** make integer or string values **/
 #define VAL_NUM(N)\

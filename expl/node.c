@@ -4,6 +4,8 @@
 #include "node.h"
 #include "class.h"
 
+int getlabel();
+
 node* make_node(Node nodetype, char *varname, Operator optype,
 		type datatype, Class ctype, value *val, int isptr){
 	node* t = (node*)malloc(sizeof(node));
@@ -54,7 +56,7 @@ node* add_stmt_tree(node *main, node *_new){
 }
 
 int addr_off = 0;	//address offset from BP
-symtable *gtable;	//global symbol table
+symtable *gtable=NULL;;	//global symbol table
 extern ctr line_ctr;
 
 static int get_next_addr(){
@@ -97,12 +99,17 @@ entry id_entry(node* idnode, type datatype, Class c, int isptr){
 	e->datatype = datatype;
 	e->ctype = c;
 	e->isptr = isptr;
-	e->size = 1;
+	if(!c)
+		e->size = 1;
+	else
+		e->size = 2;
 	e->dim1 = 0;
 	e->dim2 = 0;
 	e->bind_addr = get_next_addr();
 	alloc(e->size);
 	e->isGlobal = 0;
+	e->isdef = 0;
+	e->label = 0;
 	e->params = NULL;
 	e->ltable = NULL;
 	e->next = NULL;
@@ -149,6 +156,8 @@ entry array_entry(node *array, type datatype, Class c){
 	e->bind_addr = get_next_addr();
 	alloc(e->size);
 	e->isGlobal = 0;
+	e->isdef = 0;
+	e->label = 0;
 	e->params = NULL;
 	e->ltable = NULL;
 	e->next = NULL;
@@ -169,6 +178,8 @@ entry func_entry(node *fnode, type t, Class c){
 	e->dim2 = 0;
 	e->bind_addr = -100;
 	e->isGlobal = 1;
+	e->isdef = 0;
+	e->label = getlabel();
 	e->params = (param*)malloc(sizeof(param));
 	param_args_list(params,e->params);
 	e->ltable = (symtable*)malloc(sizeof(symtable));
@@ -247,8 +258,9 @@ static void make_symtable(symtable *table, node *decl){
 }
 
 void make_gst(node *decl){
+	extern ctr classes;
 	gtable = (symtable*)malloc(sizeof(symtable));
-	set_addr(4096);
+	set_addr(4096+8*classes);
 	make_symtable(gtable,decl);
 	installID(func_entry(FNC_NODE("main"),T_INTEGER,NULL),gtable);
 }
@@ -276,7 +288,7 @@ void make_lst(node *decl, const char *funcname, Class c){
 	if(!c)
 		set_addr(-num_param-2);
 	else
-		set_addr(-num_param-3);
+		set_addr(-num_param-4);
 	for_each_param(p,params){
 		installID(id_entry(ID_NODE(p->varname),p->datatype,NULL,p->isptr),
 					table);
@@ -298,17 +310,26 @@ int get_id_addr(node *idnode){
 	return idnode->ptr->bind_addr;
 }
 
-int verify_func(Class c, type ret, const char *funcname, node *params){
+int verify_func(Class c, type ret, const char *funcname, node *params,
+					int Override){
 	param *paramlist;
+	extern errors;
 	if(!c){
 		entry e = lookup(funcname,gtable);
 		if(!e){
 			printf("function %s not declared\n",funcname);
-			exit(1);
+			++errors;
+			return 0;
+		}
+		if(e->isdef){
+			printf("function %s already defined\n",funcname);
+			++errors;
+			return 0;
 		}
 		if(e->datatype != ret){
 			printf("return type mismatch\n");
-			exit(1);
+			++errors;
+			return 0;
 		}
 		paramlist = e->params;
 	}
@@ -317,11 +338,24 @@ int verify_func(Class c, type ret, const char *funcname, node *params){
 		if(!M){
 			printf("functions %s not declared in class %s\n",
 					funcname,printClass(c));
-			exit(1);
+			++errors;
+			return 0;
+		}
+		if(M->isdef && !Override){
+			printf("function %s already defined\n",funcname);
+			++errors;
+			return 0;
+		}
+		if(!M->isdef && Override){
+			printf("Override error. function %s not previously defined\n",
+					funcname);
+			++errors;
+			return 0;
 		}
 		if(M->ret != ret){
 			printf("return type mismatch\n");
-			exit(1);
+			++errors;
+			return 0;
 		}
 		paramlist = M->params;
 	}
@@ -333,22 +367,25 @@ int verify_func(Class c, type ret, const char *funcname, node *params){
 	for(p=paramlist->next,q=list->next; p!=NULL; p=p->next,q=q->next){
 		if(!q){
 			printf("function %s expects more parameters\n",funcname);
-			exit(1);
+			++errors;
+			return 0;
 		}
 		else if(p->datatype != q->datatype || p->isptr!=q->isptr){
 			yyerror("mismatch in function parameters\n");
-			exit(1);
 		}
 		else if(strcmp(p->varname,q->varname)!=0){
 			yyerror("mismatch in function parameters\n");
-			exit(1);
+			return 0;
 		}
 	}
 
 	if(!p && q){
 		printf("function %s expects less parameters\n",funcname);
-		exit(1);
+		++errors;
+		return 0;
 	}
+
+	return 1;
 }
 
 int last_addr(symtable *table){
@@ -375,4 +412,15 @@ void print_symtable(symtable *table){
 				e->varname,printtype(e->datatype),e->size,
 				e->bind_addr,e->dim1,e->dim2,e->isGlobal);
 	}
+}
+
+void delete_table(symtable *table){
+	entry e,p;
+	e = table->next;
+	while(e!=NULL){
+		p=e;
+		e=e->next;
+		free(p);
+	}
+	table->next = NULL;
 }

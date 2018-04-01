@@ -11,11 +11,13 @@
 
 extern ClassTable *Ctable;
 void Cinstall(Class C);
-Class makeC(const char *name, node *members, node *methods);
+Class makeC(const char *name, node *members, node *methods, Class par);
 void get_methods(node *root, Method *head);
 Class Clookup(const char *name);
 Method* MLookup(const char *name, Method *list);
 void ctable_init();
+void copy_lists(Class child, Class par);
 char* printClass(Class C);
+int isDescendant(Class curr, Class ancestor);
 
 #endif

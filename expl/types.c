@@ -3,18 +3,22 @@
 #include "node.h"
 #include "class.h"
 
-typetable *tt;
-int off;
+typetable *tt=NULL;
+int off=0;
+
+void set_off(int x){
+	off=x;
+}
 
 void reset_off(){
 	off=0;
 }
 
-static int get_offset(){
+int get_offset(){
 	return off;
 }
 
-static void update_off(){
+void update_off(){
 	++off;
 }
 
@@ -109,7 +113,7 @@ void get_fields(node *ftree, field *head){
 	if(!ftree)
 		return;
 
-	if(get_offset()==8){
+	if(get_offset()>=8){
 		printf("maximum 8 fields allowed\n");
 		return;
 	}

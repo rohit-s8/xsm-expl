@@ -21,13 +21,19 @@ id	[a-zA-Z][a-zA-Z0-9_]*
 
 "end"		{return END;}
 
+"new"		{yylval = NEW_NODE(); return NEW;}
+
+"@Override"	{return OVERRIDE;}
+
 "class"		{return CLASS;}
+
+"Extends"	{return EXTENDS;}
 
 "self"		{yylval = SELF_NODE(); return SELF;}
 
 "decl"		{return DECL;}
 
-"enddec"	{return ENDDEC;}
+"enddecl"	{return ENDDEC;}
 
 "NULL"		{yylval=NULL_NODE(); return TNULL;}
 

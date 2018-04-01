@@ -18,6 +18,11 @@ int bindArray(node*);
 int bindFunc(node*);
 void verify_args(param*,node*);
 int translateAST(node*,node*,node*);
+int getlabel();
+void delete_table(symtable*);
+void check_Mdefs(Method*);
+void check_Fdefs(symtable*);
+
 YYSTYPE temp;
 YYSTYPE _if;
 YYSTYPE _while;
@@ -26,7 +31,7 @@ extern ctr line_ctr;
 ctr infunc=0;
 ctr indec=0;
 ctr inclass=0;
-Class c;
+Class c,par;
 char *cname;
 char *funcname;	//available when grammar reduced to Fheader
 %}
@@ -34,7 +39,8 @@ char *funcname;	//available when grammar reduced to Fheader
 
 %token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
 %token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
-%token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS DEF END SELF
+%token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS DEF END SELF EXTENDS NEW
+%token OVERRIDE
 
 %right ASSIGN
 %left RELOP
@@ -48,11 +54,13 @@ char *funcname;	//available when grammar reduced to Fheader
 %%
 program: Typedefs Classdefs Declarations Fdefblock Main
 	{
+	check_Fdefs(gtable);
 	return translateAST($2,$4,$5);
 	}
 
 	| Typedefs Classdefs Declarations Main
 	{
+		check_Fdefs(gtable);
 		return translateAST($2,NULL,$4);
 	}
 
@@ -99,17 +107,43 @@ Classes: Classes Class	{$$ = make_tree(CON_NODE(),$1,$2);}
 	   | Class	{$$ = $1;}
 ;
 
-Class: CLASS ID {inclass=1; cname = $2->varname;}
-	 '{' DECL Fields MethodDecs ENDDEC 
+Class: Cname '{' DECL Fields MethodDecs ENDDEC 
 	{
-		Cinstall(makeC(cname,$6,$7));
+		Cinstall(makeC(cname,$4,$5,par));
 		c = Clookup(cname);
 	}
 		Fdefblock '}'
 	{
+		check_Mdefs(c->Mlist);
 		inclass=0;
 		c = NULL;
-		$$ = $10;
+		$$ = $8;
+	}
+	| Cname '{' DECL ENDDEC 
+	{
+		Cinstall(makeC(cname,NULL,NULL,par));
+		c = Clookup(cname);
+	}
+		Fdefblock '}'
+	{
+		check_Mdefs(c->Mlist);
+		inclass=0;
+		c = NULL;
+		$$ = $6;
+	}
+
+;
+
+Cname: CLASS ID	{inclass=1; cname = $2->varname; par=NULL;}
+	 | CLASS ID EXTENDS ID
+	{
+		inclass=1;
+		cname = $2->varname;
+		par = Clookup($4->varname);
+		if(!par){
+			printf("error:%d:class %s not defined\n",$4->varname);
+			++errors;
+		}
 	}
 ;
 
@@ -253,17 +287,85 @@ Fdef: Fheader Fblock
 
 Fheader: Type ID '('params')'	
        {
-		verify_func(c,$1->datatype,$2->varname,$4);
+		verify_func(c,$1->datatype,$2->varname,$4,0);
 		infunc = 1;
 		indec = 0;
 		funcname = $2->varname;
+		if(inclass){
+			Method *M = Mlookup(funcname,c->Mlist);
+			M->isdef = 1;
+		}
+		else{
+			entry f = lookup(funcname,gtable);
+			f->isdef = 1;
+		}
+	}
+	| OVERRIDE Type ID '('params')'
+	{
+		if(!inclass){
+			printf("error:%d:cannot override function outside class\n",
+					line_ctr);
+			++errors;
+		}
+		else{
+			if(!verify_func(c,$2->datatype,$3->varname,$5,1)){
+				printf("error:%d:cannot override function %s.",
+						line_ctr,$3->varname);
+				printf("No previous definition found\n");
+				++errors;
+			}
+			else{
+				Method *M = Mlookup($3->varname,c->Mlist);
+				M->c = c;
+				M->label = getlabel();
+				delete_table(M->ltable);
+				M->isdef = 1;
+			}
+		}
+		infunc = 1;
+		indec = 0;
+		funcname = $3->varname;
 	}
 	| Type ID '('')'
 	{
-		verify_func(c,$1->datatype,$2->varname,NULL);
+		verify_func(c,$1->datatype,$2->varname,NULL,0);
 		infunc=1;
 		indec=0;
 		funcname = $2->varname;
+		if(inclass){
+			Method *M = Mlookup(funcname,c->Mlist);
+			M->isdef = 1;
+		}
+		else{
+			entry f = lookup(funcname,gtable);
+			f->isdef = 1;
+		}
+	}
+	| OVERRIDE Type ID '('')'
+	{
+		if(!inclass){
+			printf("error:%d:cannot override function outside class\n",
+					line_ctr);
+			++errors;
+		}
+		else{
+			if(!verify_func(c,$2->datatype,$3->varname,NULL,1)){
+				printf("error:%d:cannot override function %s.",
+						line_ctr,$3->varname);
+				printf("No previous definition found\n");
+				++errors;
+			}
+			else{
+				Method *M = Mlookup($3->varname,c->Mlist);
+				M->c = c;
+				M->label = getlabel();
+				delete_table(M->ltable);
+				M->isdef = 1;
+			}
+		}
+		infunc = 1;
+		indec = 0;
+		funcname = $3->varname;
 	}
        ;
 
@@ -296,6 +398,7 @@ Main: INT MAIN'('')'{infunc=1;funcname="main";}	Fblock
 	{
 		$$ = $6;
 		$$->ptr = lookup(funcname,gtable);
+		$$->ptr->isdef = 1;
 	}
 ;
 
@@ -346,12 +449,23 @@ retstmt: RET expr';'
 
 assign: variable ASSIGN expr';'
       {
-	if($3->datatype == T_VOID)
+	if($3->datatype == T_VOID){
 		$3->datatype = $1->datatype;
-	if($1->datatype != $3->datatype){
+		$3->ctype = $1->ctype;
+	}
+	if($1->datatype && ($1->datatype!=$3->datatype)){
 		yyerror("assignment error.");
 		printf("%s is of %s datatype\n",$1->varname,
 			printtype($1->datatype));
+	}
+	if($1->ctype && ($1->ctype!=$3->ctype)){
+		yyerror("Incompatible class types");
+		if($3->ctype)
+			printf("%s is of class type %s and %s is of class type %s\n",
+				$1->varname,$1->ctype->name,$3->varname,$3->ctype->name);
+		else
+			printf("cannot assign non-class data to object %s\n",
+					$1->varname);
 	}
 	if($1->isptr && !$3->isptr){
 		yyerror("pointer error.");
@@ -392,6 +506,26 @@ assign: variable ASSIGN expr';'
 		if(basic_type($1->datatype))
 			yyerror("cannot allocate to in-built type");
 		$$ = make_tree($2,$1,$3);
+	}
+	| variable ASSIGN NEW ID'('')'';'
+	{
+		if(!$1->ctype)
+			yyerror("cannot allocate to non class object");
+		Class curr = Clookup($4->varname);
+		if(!curr){
+			printf("error:%d:%s is not a class\n",$4->varname);
+			++errors;
+		}
+		if(!isDescendant(curr,$1->ctype)){
+			printf("error:%d:Type mismatch."
+					"%s class cannot refer to %s class\n",
+					$1->ctype->name,curr->name);
+			++errors;
+		}
+		$3->ctype = curr;	
+		temp = make_tree(OP_NODE(O_ASN),$1,ALOC_NODE());
+		$$ = make_tree($3,$1,temp);
+		$1->par = temp;
 	}
 ; 
 
@@ -759,6 +893,7 @@ int bindFunc(node *funcnode){
 	node *class = funcnode->left;
 	param *params;
 	type ret;
+	int def;
 
 	if(!class){
 		funcnode->ptr = lookup(funcnode->varname,gtable);
@@ -768,6 +903,7 @@ int bindFunc(node *funcnode){
 		}
 		params = funcnode->ptr->params;
 		ret = funcnode->ptr->datatype;
+		def = funcnode->ptr->isdef;
 	}
 	else{
 		Method *M = Mlookup(funcnode->varname,class->ctype->Mlist);
@@ -832,6 +968,27 @@ int translateAST(node *classdefs, node *fdefs, node *main){
 	return 0;
 }
 
+void check_Mdefs(Method *Mlist){
+	Method *M;
+	for_each_method(M,Mlist){
+		if(!M->isdef){
+			printf("Method %s not defined\n",M->name);
+			++errors;
+		}
+	}
+}
+
+void check_Fdefs(symtable *table){
+	entry e;
+	for_each_entry(e,gtable){
+		if(e->ltable){
+			if(!e->isdef){
+				printf("Function %s not defined\n",e->varname);
+				++errors;
+			}
+		}
+	}
+}
 
 int yyerror(const char* s){
 	++errors;
