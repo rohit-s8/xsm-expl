@@ -107,6 +107,12 @@ id	[a-zA-Z][a-zA-Z0-9_]*
 
 "!="		{yylval=OP_NODE(O_NE); return RELOP;}
 
+"&&"	{yylval=OP_NODE(O_AND); return AND;}
+
+"||"	{yylval=OP_NODE(O_OR); return OR;}
+
+"!"		{yylval=OP_NODE(O_NOT); return NOT;}
+
 [+]		{yylval=OP_NODE(O_ADD); return PLUS;}
 
 [-]		{yylval=OP_NODE(O_SUB); return MINUS;}

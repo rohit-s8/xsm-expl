@@ -50,13 +50,25 @@
 #define ADD(x,y)\
 	printi("ADD R%d,R%d\n",x,y)
 
+/** ADD Rx,N **/
+#define ADD_N(x,N)\
+	printi("ADD R%d,%d\n",x,N);
+
 /** SUB Rx,Ry **/
 #define SUB(x,y)\
 	printi("SUB R%d,R%d\n",x,y)
 
+/** SUB Rx,N **/
+#define SUB_N(x,N)\
+	printi("SUB R%d,%d\n",x,N)
+
 /** MUL Rx,Ry **/
 #define MUL(x,y)\
 	printi("MUL R%d,R%d\n",x,y)
+
+/** MUL Rx,N **/
+#define MUL_N(x,N)\
+	printi("MUL R%d,%d\n",x,N)
 
 /** DIV Rx,Ry **/
 #define DIV(x,y)\
@@ -277,9 +289,7 @@ static void library_call(const char* fcode, reg_ind arg1, reg_ind arg2,
 	PUSH(ret);
 	CALL(0);
 	POP(ret);
-	int i;
-	for(i=0; i<4; i++)
-		POP(temp);
+	printi("SUB SP,4\n");
 	free_reg();
 }
 
@@ -303,18 +313,20 @@ void put_header(){
 	temp = get_reg();
 	printi("%d\n%d\n%d\n%d\n%d\n%d\n%d\n%d\n",
 		0,2056,0,0,0,0,0,0);
-	MOV("BP","4096");
+	int addr=4096;
 	for_each_class(c){
 		methods=0;
 		for_each_method(M,c->Mlist){
-			MOV("[BP]",putlabel(M->label));
-			INR("BP");
+			printi("MOV [%d],%s\n",addr,putlabel(M->label));
+			addr++;
 			methods++;
 		}
+		addr += 8-methods;
+		/*
 		if(8-methods>0){
-			MOV_RN(temp,8-methods);
-			printi("ADD BP,R%d\n",temp);
+			//MOV_RN(temp,8-methods);
 		}
+		*/
 	}		
 	printi("MOV BP,%d\n",last_addr(gtable)+1);
 	printi("MOV SP,%d\n",last_addr(gtable));
@@ -390,11 +402,11 @@ static reg_ind get_array_addr(node *array){
 		offset = dimtree->res_reg;
 	else{
 		offset = dimtree->left->res_reg;
-		next = reglink(dimtree);
-		MOV_RN(next,idnode->ptr->dim2);
-		MUL(offset,next);
+		//next = reglink(dimtree);
+		//MOV_RN(next,idnode->ptr->dim2);
+		MUL_N(offset,idnode->ptr->dim2);
 		ADD(offset,dimtree->right->res_reg);
-		reg_unlink(dimtree);
+		//reg_unlink(dimtree);
 		change_reglink(dimtree,dimtree->left);
 		reg_unlink(dimtree->right);
 	}
@@ -435,12 +447,13 @@ void codegen(node *root){
 
 		case N_SELF:
 				next = reglink(root);
-				reg_ind offset = get_reg();
+				//reg_ind offset = get_reg();
 				MOV_RBP(next);
-				MOV_RN(offset,4);
-				SUB(next,offset);
+				//MOV_RN(offset,4);
+				//SUB(next,offset);
+				SUB_N(next,4);
 				MOVA_RA(next,next);
-				free_reg();
+				//free_reg();
 				break;
 		case N_PTR:
 		case N_ID:
@@ -448,16 +461,16 @@ void codegen(node *root){
 				next = reglink(root);
 				addr = get_id_addr(root);
 
-				if(root->ptr->isGlobal){
+				if(root->ptr->isGlobal)
 					MOV_RN(next,addr);
-				}
 				else{
 					MOV_RBP(next);
 					if(addr!=0){
-						reg_ind offset = get_reg();
-						MOV_RN(offset,addr);
-						ADD(next,offset);
-						free_reg();	//free offset
+						//reg_ind offset = get_reg();
+						//MOV_RN(offset,addr);
+						//ADD(next,offset);
+						ADD_N(next,addr);
+						//free_reg();	//free offset
 					}
 					//next register now has address of id
 				}
@@ -476,10 +489,12 @@ void codegen(node *root){
 					f = Flookup(t->flist,root->varname);
 				else
 					f = Flookup(c->mlist,root->varname);
-				next = get_reg();
-				MOV_RN(next,f->offset);
-				ADD(root->left->res_reg,next);
-				free_reg();
+				if(f->offset!=0){
+					//next = get_reg();
+					//MOV_RN(next,f->offset);
+					ADD_N(root->left->res_reg,f->offset);
+					//free_reg();
+				}
 				if(!(PAR->nodetype==N_RD||IS_ASSIGNED||IS_ARRAY||IS_REF
 							||PAR->nodetype==N_FNC||OBJCOPY))
 					MOVA_RA(root->left->res_reg,root->left->res_reg);
@@ -494,11 +509,11 @@ void codegen(node *root){
 				MOVA_RA(addr_reg,addr_reg);
 			break;
 		case N_OP:
-			if(root->optype!=O_ASN){
+			if(root->optype!=O_ASN && root->optype!=O_NOT){
 				codegen(root->left);
 				codegen(root->right);
 			}
-			if(root->optype!=O_ADR && root->optype!=O_ASN){
+			if(root->optype!=O_ADR&&root->optype!=O_ASN&&root->optype!=O_NOT){
 				left_reg = root->left->res_reg;
 				right_reg = root->right->res_reg;
 			}
@@ -562,8 +577,27 @@ void codegen(node *root){
 				case O_ADR:
 					change_reglink(root,root->right);
 					break;
+				case O_AND:
+					MUL(left_reg,right_reg);
+					break;
+				case O_OR:
+					next = get_reg();
+					MOV_RR(next,right_reg);
+					MUL(next,left_reg);
+					ADD(left_reg,right_reg);
+					SUB(left_reg,next);
+					free_reg();
+					break;
+				case O_NOT:
+					codegen(root->right);
+					right_reg = root->right->res_reg;
+					next = reglink(root);
+					MOV_RN(next,1);
+					SUB(next,right_reg);
+					reg_unlink(root->right);
+					break;
 			}
-			if(root->optype!=O_ASN && root->optype!=O_ADR){
+			if(root->optype!=O_ASN&&root->optype!=O_ADR&&root->optype!=O_NOT){
 				change_reglink(root,root->left);
 				reg_unlink(root->right);
 			}
@@ -617,22 +651,30 @@ void codegen(node *root){
 			islooping{
 				JMP_ENDWHILE;
 			}
+			else{
+				extern line_ctr;
+				printf("warning:%d:Not in loop. ignoring break\n",line_ctr);
+			}
 			break;
 		case N_CNT:
 			islooping{
 				JMP_WHILE;
+			}
+			else{
+				extern line_ctr;
+				printf("warning:%d:Not in loop. ignoring continue\n",line_ctr);
 			}
 			break;
 		case N_RET:
 			codegen(root->right);
 			reg_ind res = root->right->res_reg;
 			next = get_reg();
-			reg_ind r = get_reg();
+			//reg_ind r = get_reg();
 			MOV_RBP(next);
-			MOV_RN(r,-2);
-			ADD(next,r);
+			//MOV_RN(r,-2);
+			SUB_N(next,2);
 			MOVA_AR(next,res);
-			free_reg();
+			//free_reg();
 			free_reg();
 			MOV("SP","BP");
 			printi("POP BP\n");
@@ -659,10 +701,10 @@ void codegen(node *root){
 			printi("PUSH BP\n");
 			MOV("BP","SP");
 			if(last_addr(table)>0){
-				reg_ind temp = get_reg();
-				MOV_RN(temp,last_addr(table));
-				printi("ADD SP,R%d\n",temp);
-				free_reg();
+				//reg_ind temp = get_reg();
+				//MOV_RN(temp,last_addr(table));
+				printi("ADD SP,%d\n",last_addr(table));
+				//free_reg();
 			}
 			free_all_reg();
 			codegen(root->left);
@@ -691,11 +733,11 @@ void codegen(node *root){
 				}
 				else{
 					methodptr = get_reg();
-					reg_ind offset = get_reg();
+					//reg_ind offset = get_reg();
 					MOV_RBP(methodptr);
-					MOV_RN(offset,3);
-					SUB(methodptr,offset);
-					free_reg();
+					//MOV_RN(offset,3);
+					SUB_N(methodptr,3);
+					//free_reg();
 					MOVA_RA(methodptr,methodptr);
 					PUSH(next);
 					PUSH(methodptr);
@@ -704,10 +746,10 @@ void codegen(node *root){
 				Method *M = Mlookup(root->varname,c->Mlist);
 				params = M->params;
 				if(M->index>0){
-					reg_ind findex = get_reg();
-					MOV_RN(findex,M->index);
-					ADD(methodptr,findex);	//methodptr points to function label
-					free_reg();		//free findex
+					//reg_ind findex = get_reg();
+					//MOV_RN(findex,M->index);
+					ADD_N(methodptr,M->index);//methodptr points to func label
+					//free_reg();		//free findex
 				}
 				MOVA_RA(methodptr,methodptr);//methodptr has function label
 				printi("CALL R%d\n",methodptr);
@@ -720,19 +762,27 @@ void codegen(node *root){
 				PUSH(next);					//return value
 				LABEL_CALL("L",flabel);		//function call
 			}
+
 			POP(next);					//get return value
-			next = get_reg();
+
+			//next = get_reg();
+			int num_args=0;
 			if(c){
-				POP(next);				//POP object address
-				POP(next);				//POP vft pointer
+				//POP(next);				//POP object address
+				//POP(next);				//POP vft pointer
+				num_args+=2;
 			}
 			int num_param=0;
 			param *p;
 			for_each_param(p,params)
 				num_param++;
+			num_args+=num_param;
+			/*
 			while(num_param--)
 				POP(next);				//pop arguments
 			free_reg();
+			*/
+			printi("SUB SP,%d\n",num_args);
 			restore_registers();
 			break;
 		case N_BRKP:

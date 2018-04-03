@@ -142,6 +142,8 @@ void get_fields(node *ftree, field *head){
 			f->name = ftree->right->varname;
 			f->offset = get_offset();
 			update_off();
+			if(f->c)
+				update_off();
 			
 			for(temp=head;temp->next!=NULL;temp=temp->next);
 			temp->next=f;

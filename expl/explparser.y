@@ -40,9 +40,12 @@ char *funcname;	//available when grammar reduced to Fheader
 %token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
 %token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
 %token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS DEF END SELF EXTENDS NEW
-%token OVERRIDE
+%token OVERRIDE REF UMINUS AND OR NOT
 
 %right ASSIGN
+%left OR
+%left AND
+%right NOT
 %left RELOP
 %left PLUS MINUS
 %left MUL DIV 
@@ -527,6 +530,26 @@ assign: variable ASSIGN expr';'
 		$$ = make_tree($3,$1,temp);
 		$1->par = temp;
 	}
+	| FAccess ASSIGN NEW ID'('')'';'
+	{
+		if(!$1->ctype)
+			yyerror("cannot allocate to non class object");
+		Class curr = Clookup($4->varname);
+		if(!curr){
+			printf("error:%d:%s is not a class\n",$4->varname);
+			++errors;
+		}
+		if(!isDescendant(curr,$1->ctype)){
+			printf("error:%d:Type mismatch."
+					"%s class cannot refer to %s class\n",
+					$1->ctype->name,curr->name);
+			++errors;
+		}
+		$3->ctype = curr;	
+		temp = make_tree(OP_NODE(O_ASN),$1,ALOC_NODE());
+		$$ = make_tree($3,$1,temp);
+		$1->par = temp;
+	}
 ; 
 
 ifstmt: IF'('expr')'THEN stmtlist ELSE stmtlist ENDIF';'
@@ -633,6 +656,42 @@ expr: expr PLUS expr
 		$$ = make_tree($1,temp,$2);
 		$$->datatype = T_INTEGER;
 	}
+
+| expr AND expr
+{
+	if($1->datatype!=T_BOOL || $3->datatype!=T_BOOL){
+		printf("error:%d:Type mismatch. operator && expects boolean operands\n",
+				line_ctr);
+		++errors;
+	}
+
+	$$=make_tree($2,$1,$3);
+	$$->datatype = T_BOOL;
+}
+
+| expr OR expr
+{
+	if($1->datatype!=T_BOOL || $3->datatype!=T_BOOL){
+		printf("error:%d:Type mismatch. operator || expects boolean operands\n",
+				line_ctr);
+		++errors;
+	}
+
+	$$=make_tree($2,$1,$3);
+	$$->datatype = T_BOOL;
+}
+
+| NOT expr
+{
+	if($2->datatype!=T_BOOL){
+		printf("error:%d:Type mismatch. operator ! expects boolean operands\n",
+				line_ctr);
+		++errors;
+	}
+
+	$$=make_tree($1,$2,NULL);
+	$$->datatype = T_BOOL;
+}
 
 | expr RELOP expr
     {  
@@ -775,6 +834,16 @@ MethodCall: ID'.'ID'('Arglist')'
 				$1->ctype = c;
 				$$ = make_tree(FNC_NODE($3->varname),$1,NULL);
 				bindFunc($$);
+		}
+		| FAccess'.'ID'('Arglist')'
+		{
+			$$ = make_tree(FNC_NODE($3->varname),$1,$5);
+			bindFunc($$);
+		}
+		| FAccess'.'ID'('')'
+		{
+			$$ = make_tree(FNC_NODE($3->varname),$1,NULL);
+			bindFunc($$);
 		}
 ;
 			
