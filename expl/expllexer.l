@@ -75,6 +75,12 @@ id	[a-zA-Z][a-zA-Z0-9_]*
 
 "breakpoint"	{yylval=BRKP_NODE(); return BRKP;}
 
+"let"		{yylval=LET_NODE(); return LET;}
+
+"in"		{return IN;}
+
+"endlet"	{return ENDLET;}
+
 {number}	{
 		int num=atoi(yytext);
 		yylval=VAL_NODE(T_INTEGER,VAL_NUM(num));

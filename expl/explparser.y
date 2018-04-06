@@ -31,16 +31,18 @@ extern ctr line_ctr;
 ctr infunc=0;
 ctr indec=0;
 ctr inclass=0;
+ctr inlet=0;
 Class c,par;
 char *cname;
 char *funcname;	//available when grammar reduced to Fheader
+char *letvar;
 %}
 
 
 %token NUM PLUS MINUS MUL DIV ID ASSIGN READ WRITE IF THEN ELSE ENDIF WHILE DO
 %token ENDWHILE BREAK CONTINUE RELOP STR INT STRING DECL ENDDEC MAIN RET BRKP
 %token ADR MOD TYPE INIT ALLOC FREE TNULL CLASS DEF END SELF EXTENDS NEW
-%token OVERRIDE REF UMINUS AND OR NOT
+%token OVERRIDE REF UMINUS AND OR NOT LET IN ENDLET
 
 %right ASSIGN
 %left OR
@@ -429,6 +431,7 @@ stmt: READ'('variable')'';'	{$$ = make_tree($1,$3,NULL);}
 	|whilestmt	{$$=$1;}
 	|retstmt	{$$=$1;}
 	|BRKP';'	{$$=$1;}
+	|letstmt	{$$=$1;}
 ;
 
 retstmt: RET expr';'
@@ -580,6 +583,40 @@ whilestmt: WHILE'('expr')' DO stmtlist ENDWHILE';'
 	 }
 	 ;
 
+letstmt: LET
+	  {
+			if(inclass){
+				printf("error:%d: let cannot be used in class scope\n",
+						line_ctr);
+				++errors;
+			}
+		} 
+		'(' ID ASSIGN expr ')'
+		{
+			bindID($4);
+			if(!$4->ptr->isGlobal){
+				printf("error:%d:let variable must have the same name as a"
+						"global variable\n",line_ctr);
+				++errors;
+			}
+
+			if($4->datatype != T_INTEGER || $6->datatype != T_INTEGER){
+				printf("error:%d:Type mismatch. operands must be int\n",
+							line_ctr);
+				++errors;
+			}
+			$4->ptr->inlet = 1;
+		}
+		IN {inlet++;}
+		stmtlist ENDLET
+		{
+			inlet--;
+			$4->ptr->inlet = (inlet)? 1:0;
+			temp = make_tree($5,$4,$6);
+			$$ = make_tree($1,temp,$11);
+		}
+	   ;
+
 expr: expr PLUS expr	
     {
 	if($1->datatype!=T_INTEGER || $3->datatype!=T_INTEGER){
@@ -711,7 +748,11 @@ expr: expr PLUS expr
     }
 
 | '('expr')'	{$$=$2;}
-| variable	{$$=$1;}
+| variable
+{
+	$1->inlet = $1->ptr->inlet;
+	$$ = $1;
+}
 | FAccess	{$$=$1;}
 | ID'('Arglist')'
 {

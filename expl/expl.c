@@ -339,29 +339,23 @@ void put_header(){
 }
 
 static void put_write(node *n){
-	save_registers(num_reg());
 	reg_ind syscallno = get_reg();
 	MOV_RN(syscallno,-2);
 	library_call("Write",syscallno,n->res_reg,n->res_reg);
 	free_reg();
-	restore_registers();
 }
 
 static void put_read(node *n){
-	save_registers(num_reg());
 	reg_ind syscallno = get_reg();
 	MOV_RN(syscallno,-1);
 	library_call("Read",syscallno,n->res_reg,n->res_reg);
 	free_reg();
-	restore_registers();
 }
 
 static void put_init(){
-	save_registers(num_reg());
 	reg_ind temp = get_reg();
 	library_call("Heapset",temp,temp,temp);
 	free_reg();
-	restore_registers();
 }
 
 static void put_alloc(reg_ind ret){
@@ -421,12 +415,12 @@ void codegen(node *root){
 	reg_ind next,left_reg,right_reg;
 	reg_ind cond;
 	reg_ind classptr,methodptr;
-	node *temp;
+	node *temp=NULL;
 	int addr;
 	ctr flabel;
-	symtable *table;
-	Class c;
-	type t;
+	symtable *table=NULL;
+	Class c=NULL;
+	type t=NULL;
 
 	if(root==NULL)
 		return;
@@ -461,8 +455,12 @@ void codegen(node *root){
 				next = reglink(root);
 				addr = get_id_addr(root);
 
-				if(root->ptr->isGlobal)
-					MOV_RN(next,addr);
+				if(root->ptr->isGlobal){
+					if(!root->inlet)
+						MOV_RN(next,addr);
+					else
+						MOV_RN(next,addr+1);
+				}
 				else{
 					MOV_RBP(next);
 					if(addr!=0){
@@ -604,14 +602,18 @@ void codegen(node *root){
 			break;
 
 		case N_RD:
+			save_registers(num_reg());
 			codegen(root->left);
 			put_read(root->left);
 			reg_unlink(root->left);
+			restore_registers();
 			break;
 		case N_WR:
+			save_registers(num_reg());
 			codegen(root->left);
 			put_write(root->left);
 			reg_unlink(root->left);
+			restore_registers();
 			break;
 
 		case N_IF:
@@ -756,6 +758,7 @@ void codegen(node *root){
 				free_reg();		//free methodptr register
 			}
 			else{
+				c=NULL;
 				flabel = root->ptr->label;
 				params = root->ptr->params;
 				next = reglink(root);		//return value
@@ -790,7 +793,9 @@ void codegen(node *root){
 			break;
 
 		case N_INIT:
+			save_registers(num_reg());
 			put_init();
+			restore_registers();
 			break;
 		case N_ALOC:
 			save_registers(num_reg());
@@ -799,10 +804,12 @@ void codegen(node *root){
 			restore_registers();
 			break;
 		case N_FREE:
+			save_registers(num_reg());
 			codegen(root->left);
 			put_free(root->left);
 			reg_unlink(root->left);
 			codegen(root->right);
+			restore_registers();
 			break;
 		case N_NULL:
 			next = reglink(root);
@@ -819,6 +826,24 @@ void codegen(node *root){
 			free_reg();
 			reg_unlink(root->left);
 			reg_unlink(root->right->right);
+			break;
+
+		case N_LET:
+			next = get_reg();
+			node *let_id = root->left->left;
+			addr = let_id->ptr->bind_addr+1;
+			MOV_RA(next,addr);
+			PUSH(next);
+			free_reg();
+			codegen(root->left->right);
+			reg_ind eval = root->left->right->res_reg;
+			MOV_AR(addr,eval);
+			reg_unlink(root->left->right);
+			codegen(root->right);
+			next = get_reg();
+			POP(next);
+			MOV_AR(addr,next);
+			free_reg();
 			break;
 	}
 }

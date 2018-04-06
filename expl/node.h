@@ -15,7 +15,7 @@ value* make_value(int num, const char *str);
 node* make_tree(node *root, node *left, node *right);
 node* add_stmt_tree(node *main, node* _new);
 void param_args_list(node *root, param *head);
-entry id_entry(node *idnode, type t, Class c, int isptr);
+entry id_entry(node *idnode, type t, Class c, int isptr, int isGlobal);
 entry array_entry(node *arraynode, type t, Class c);
 entry func_entry(node *funcnode, type t, Class c);
 void installID(entry e, symtable *table);
@@ -132,6 +132,10 @@ int last_addr(symtable *table);
 /** NEW node **/
 #define NEW_NODE()\
 	makenode(N_NEW)
+
+/** LET node **/
+#define LET_NODE()\
+	makenode(N_LET)
 
 /** make integer or string values **/
 #define VAL_NUM(N)\

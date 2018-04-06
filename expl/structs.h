@@ -34,7 +34,8 @@ typedef enum Node{
 	N_FREE,
 	N_NULL,
 	N_SELF,
-	N_NEW
+	N_NEW,
+	N_LET
 }Node;
 
 //operator types
@@ -130,6 +131,7 @@ typedef struct symtable{
 	int bind_addr;
 	int isGlobal;
 	int isdef;
+	int inlet;
 	ctr label;
 	param *params;
 	struct symtable *ltable;
@@ -148,6 +150,7 @@ typedef struct node{
 	reg_ind res_reg;
 	entry ptr;
 	int isptr;
+	int inlet;
 	struct node *left,*right,*par;
 }node;
 

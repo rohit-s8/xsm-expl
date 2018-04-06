@@ -22,6 +22,7 @@ node* make_node(Node nodetype, char *varname, Operator optype,
 	t->val = val;
 	t->res_reg=-1;
 	t->ptr = NULL;
+	t->inlet = 0;
 	t->left = t->right = t->par = NULL;
 	return t;
 }
@@ -93,23 +94,24 @@ void param_args_list(node *root, param *head){
 	}
 }
 
-entry id_entry(node* idnode, type datatype, Class c, int isptr){
+entry id_entry(node* idnode, type datatype, Class c, int isptr, int isGlobal){
 	entry e = (entry)malloc(sizeof(symtable));
 	e->varname = strdup(idnode->varname);
 	e->datatype = datatype;
 	e->ctype = c;
 	e->isptr = isptr;
-	if(!c)
-		e->size = 1;
+	if(c || (datatype==T_INTEGER && isGlobal && !isptr))
+		e->size=2;
 	else
-		e->size = 2;
+		e->size=1;
 	e->dim1 = 0;
 	e->dim2 = 0;
 	e->bind_addr = get_next_addr();
 	alloc(e->size);
-	e->isGlobal = 0;
+	e->isGlobal = isGlobal;
 	e->isdef = 0;
 	e->label = 0;
+	e->inlet = 0;
 	e->params = NULL;
 	e->ltable = NULL;
 	e->next = NULL;
@@ -158,6 +160,7 @@ entry array_entry(node *array, type datatype, Class c){
 	e->isGlobal = 0;
 	e->isdef = 0;
 	e->label = 0;
+	e->inlet = 0;
 	e->params = NULL;
 	e->ltable = NULL;
 	e->next = NULL;
@@ -180,6 +183,7 @@ entry func_entry(node *fnode, type t, Class c){
 	e->isGlobal = 1;
 	e->isdef = 0;
 	e->label = getlabel();
+	e->inlet = 0;
 	e->params = (param*)malloc(sizeof(param));
 	param_args_list(params,e->params);
 	e->ltable = (symtable*)malloc(sizeof(symtable));
@@ -188,8 +192,10 @@ entry func_entry(node *fnode, type t, Class c){
 
 
 void installID(entry e, symtable *table){
+	/*
 	if(table==gtable)
 		e->isGlobal = 1;		//for global variables
+		*/
 
 	if(!table->next){
 		table->next = e;
@@ -213,6 +219,7 @@ static void installEntries(symtable *table, node *varlist, type t, Class c){
 	if(!varlist)
 		return;
 
+	int isGlobal = (table==gtable)? 1:0;
 	switch(varlist->nodetype){
 		case N_CON:
 			installEntries(table,varlist->left,t,c);
@@ -220,7 +227,7 @@ static void installEntries(symtable *table, node *varlist, type t, Class c){
 			break;
 
 		case N_ID:
-			installID(id_entry(varlist,t,c,0),table);
+			installID(id_entry(varlist,t,c,0,isGlobal),table);
 			break;
 
 		case N_ARR:
@@ -228,7 +235,7 @@ static void installEntries(symtable *table, node *varlist, type t, Class c){
 			break;
 
 		case N_PTR:
-			installID(id_entry(varlist,t,c,1),table);
+			installID(id_entry(varlist,t,c,1,isGlobal),table);
 			break;
 
 		case N_FNC:
@@ -290,7 +297,7 @@ void make_lst(node *decl, const char *funcname, Class c){
 	else
 		set_addr(-num_param-4);
 	for_each_param(p,params){
-		installID(id_entry(ID_NODE(p->varname),p->datatype,NULL,p->isptr),
+		installID(id_entry(ID_NODE(p->varname),p->datatype,NULL,p->isptr,0),
 					table);
 	}
 	set_addr(1);
