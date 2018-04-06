@@ -1,18 +1,18 @@
 CC = gcc
-CFLAG = -c -w -g
+CFLAG = -c -w
 LEX = flex
 YACC = yacc -d
-VER = 8
+VER =
 
 all: expl$(VER) linker
 
 
 expl$(VER): expl.o node.o lexer.o parser.o files.o types.o class.o
-	$(CC) -g -o expl$(VER) expl.o node.o lexer.o parser.o files.o types.o\
+	$(CC) -o expl$(VER) expl.o node.o lexer.o parser.o files.o types.o\
 		class.o
 
 linker: labeltranslator.o pair.o files.o
-	$(CC) -g -o linker labeltranslator.o pair.o files.o
+	$(CC) -o linker labeltranslator.o pair.o files.o
 
 expl.o: expl.c node.h types.h class.h y.tab.h
 	$(CC) $(CFLAG) expl.c
